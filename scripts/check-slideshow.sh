@@ -3,6 +3,9 @@ set -euo pipefail
 PACKAGE_ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 CHECKS_DIR="$PACKAGE_ROOT/.build/slideshow-checks"
 mkdir -p "$CHECKS_DIR"
+for sound in ShutterClick ShutterClickRoom ShutterArrivalRoom; do
+  cp "$PACKAGE_ROOT/Sources/LightTableApp/Resources/$sound.wav" "$CHECKS_DIR/$sound.wav"
+done
 xcrun swiftc -swift-version 5 -parse-as-library -module-name LightTableCore -emit-module -emit-library \
   "$PACKAGE_ROOT/Sources/LightTableCore/TableLayout.swift" \
   "$PACKAGE_ROOT/Sources/LightTableCore/AlbumPage.swift" \

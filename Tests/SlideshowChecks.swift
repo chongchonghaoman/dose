@@ -1,5 +1,7 @@
 import AppKit
+import AVFoundation
 import CoreGraphics
+import CryptoKit
 import Foundation
 import LightTableCore
 
@@ -377,16 +379,74 @@ struct SlideshowChecks {
         check(color(glow, 40, glowImage.height / 2).alphaComponent > 0.01,
               "the cached spill carries light beyond the original left aperture edge")
 
-        // The public app must not distribute private third-party audio assets.
-        if let appPath = CommandLine.arguments.dropFirst().first {
-            guard let appBundle = Bundle(path: appPath), let resources = appBundle.resourceURL else {
-                preconditionFailure("the standalone app must have a valid bundle")
+        // Inspect the actual bundled recording without opening an audio output device.
+        guard let shutterURL = SlideshowSoundResource.url() else {
+            preconditionFailure("the check executable must contain ShutterClick.wav")
+        }
+        let shutterData = try Data(contentsOf: shutterURL)
+        let shutterDigest = SHA256.hash(data: shutterData).map { String(format: "%02x", $0) }.joined()
+        check(shutterDigest == "5534a1a4f544100b73a72ef31e8853543dba20c66f1db9186cfb147ae162aa25",
+              "the bundled sound matches the selected Jianying shutter recording exactly")
+        let shutterAudio = try AVAudioFile(forReading: shutterURL)
+        check(shutterAudio.fileFormat.sampleRate == 48_000 && shutterAudio.fileFormat.channelCount == 2 &&
+              shutterAudio.length == 9_126,
+              "the recording preserves both channels, 48kHz and the complete 190.125ms source duration")
+        guard let shutterBuffer = AVAudioPCMBuffer(pcmFormat: shutterAudio.processingFormat,
+                                                   frameCapacity: AVAudioFrameCount(shutterAudio.length)) else {
+            preconditionFailure("the selected shutter recording must decode")
+        }
+        try shutterAudio.read(into: shutterBuffer)
+        guard let channels = shutterBuffer.floatChannelData else {
+            preconditionFailure("the recording must provide decoded PCM samples")
+        }
+        let channelSamples = (0..<Int(shutterBuffer.format.channelCount)).flatMap { channel in
+            Array(UnsafeBufferPointer(start: channels[channel], count: Int(shutterBuffer.frameLength)))
+        }
+        check(shutterBuffer.frameLength == 9_126 && channelSamples.allSatisfy { $0.isFinite && abs($0) <= 1 } &&
+              channelSamples.contains { abs($0) > 0.05 },
+              "the whole shutter recording decodes to non-silent bounded audio")
+        check(SlideshowSoundResource.playbackVolume == 0.20,
+              "first arrival and full shutter share the quieter playback volume")
+        for (name, dryFrames) in [("ShutterClickRoom", 9_126), ("ShutterArrivalRoom", 4_563)] {
+            guard let roomURL = SlideshowSoundResource.url(named: name) else {
+                preconditionFailure("the processed shutter resource must be bundled")
             }
-            let files = FileManager.default.enumerator(at: resources, includingPropertiesForKeys: nil)?
-                .allObjects.compactMap { $0 as? URL } ?? []
-            let audioExtensions = Set(["wav", "mp3", "m4a", "aiff", "aif", "caf", "ogg", "flac"])
-            check(!files.contains { audioExtensions.contains($0.pathExtension.lowercased()) },
-                  "the public standalone app contains no bundled audio recordings")
+            let room = try AVAudioFile(forReading: roomURL)
+            check(room.length == dryFrames + 8_640 && room.fileFormat.sampleRate == 48_000 && room.fileFormat.channelCount == 2,
+                  "\(name) keeps its selected dry interval and adds exactly 180ms of room tail")
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: room.processingFormat, frameCapacity: AVAudioFrameCount(room.length)) else {
+                preconditionFailure("the room recording must decode")
+            }
+            try room.read(into: buffer)
+            guard let samples = buffer.floatChannelData else { preconditionFailure("the room recording must supply PCM") }
+            let allSamples = (0..<Int(buffer.format.channelCount)).flatMap { channel in
+                Array(UnsafeBufferPointer(start: samples[channel], count: Int(buffer.frameLength)))
+            }
+            check(allSamples.allSatisfy { $0.isFinite && abs($0) < 0.92 } && allSamples.contains { abs($0) > 0.05 },
+                  "\(name) contains a clear click with peak headroom")
+            let tail = Array(UnsafeBufferPointer(start: samples[0] + dryFrames, count: 8_640))
+            check(tail.contains { abs($0) > 0.0001 } && tail.last == 0 && samples[0][0] == 0,
+                  "\(name) has a quiet reflection tail and click-free endpoints")
+            if let appPath = CommandLine.arguments.dropFirst().first {
+                guard let bundle = Bundle(path: appPath), let url = SlideshowSoundResource.url(named: name, in: bundle) else {
+                    preconditionFailure("the standalone app must bundle both room recordings")
+                }
+                let packaged = try Data(contentsOf: url)
+                let expected = try Data(contentsOf: roomURL)
+                check(url.standardizedFileURL.path.hasPrefix(bundle.bundleURL.standardizedFileURL.path + "/") && packaged == expected,
+                      "the standalone app contains the exact \(name) recording inside its bundle")
+            }
+        }
+        // Optional standalone app verification uses the same production resolver.
+        if let appPath = CommandLine.arguments.dropFirst().first {
+            guard let appBundle = Bundle(path: appPath),
+                  let appAudioURL = SlideshowSoundResource.url(in: appBundle) else {
+                preconditionFailure("the standalone app must resolve its own bundled shutter audio")
+            }
+            check(appAudioURL.standardizedFileURL.path.hasPrefix(appBundle.bundleURL.standardizedFileURL.path + "/"),
+                  "the standalone app resolves audio inside its own bundle")
+            let appAudio = try Data(contentsOf: appAudioURL)
+            check(appAudio == shutterData, "the standalone app contains the complete selected recording")
         }
 
         let portraitImage = makeQuadrants(width: 600, height: 1000)

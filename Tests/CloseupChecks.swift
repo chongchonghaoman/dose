@@ -131,6 +131,42 @@ private actor RasterGate {
             check(flat.scale == 1 && flat.apertureScale == 1, "small windows never invent an extra magnification at progress \(p)")
         }
 
+        for window in [CGSize(width: 840, height: 640), CGSize(width: 1180, height: 900),
+                       CGSize(width: 2200, height: 1100), CGSize(width: 4000, height: 3000)] {
+            let closeDiameter = LoupeGeometry.closeDiameter(in: window)
+            let ordinary = LoupeSampling(in: window, closeViewing: false, mode: .eight, progress: 0)
+            check(ordinary.diameter == 260 && ordinary.magnification == 1.5 && ordinary.contentScale == 1,
+                  "8x preset leaves ordinary 1.5x sampling unchanged at \(Int(window.width))pt")
+            let end = LoupeSampling(in: window, closeViewing: true, mode: .eight, progress: 1)
+            check(abs(end.magnification - 8) < 1e-8 && end.diameter == closeDiameter && end.contentScale == 1,
+                  "8x samples original pixels at exactly 8x within the existing drawable at \(Int(window.width))pt")
+            let returning = LoupeSampling(in: window, closeViewing: true, mode: .eight, progress: 0)
+            check(abs(returning.magnification * 260 / returning.diameter - 1.5) < 1e-8,
+                  "return reaches 1.5x before dropping the large raster at \(Int(window.width))pt")
+            let available = LoupeGeometry.sourceViewport(point: point, in: window, closeViewing: true, mode: .eight)
+            var continuous = true
+            var containsField = true
+            var unchangedOriginal = true
+            var previous: CGFloat = 1.5
+            for step in 0...100 {
+                let progress = CGFloat(step) / 100
+                let sample = LoupeSampling(in: window, closeViewing: true, mode: .eight, progress: progress)
+                let displayedDiameter = 260 * sample.depth.apertureScale
+                let displayedMagnification = sample.magnification * displayedDiameter / sample.diameter
+                continuous = continuous && displayedMagnification >= previous - 1e-8 && displayedMagnification <= 8 + 1e-8
+                previous = displayedMagnification
+                let field = LoupeRenderer.sourceViewport(point: point, diameter: displayedDiameter, magnification: displayedMagnification)
+                containsField = containsField && available.insetBy(dx: -0.001, dy: -0.001).contains(field)
+                let originalSample = LoupeSampling(in: window, closeViewing: true, mode: .original, progress: progress)
+                let originalDepth = LoupeDepth(progress: progress, finalScale: closeDiameter / 260)
+                unchangedOriginal = unchangedOriginal && originalSample.magnification == LoupeGeometry.magnification(for: closeDiameter)
+                    && originalSample.contentScale == originalDepth.scale / originalDepth.apertureScale
+            }
+            check(continuous, "8x approach and reversed return stay continuous and never overshoot at \(Int(window.width))pt")
+            check(containsField, "scene selection covers every intermediate field, including windows above native 8x, at \(Int(window.width))pt")
+            check(unchangedOriginal, "original mode retains the existing fixed sampling and layer animation at \(Int(window.width))pt")
+        }
+
         let slide = Slide(url: URL(fileURLWithPath: "/in-memory.png"), x: 0.5, y: 0.5, width: 0.3)
         let baseline = SlidePresentation.placement(slide, board: board, aspect: 1.5, zoom: 1)
         let enlarged = SlidePresentation.placement(slide, board: board, aspect: 1.5, zoom: 1, magnification: 1.8)
@@ -149,6 +185,28 @@ private actor RasterGate {
         ctx.fill(CGRect(x: 300, y: 0, width: 300, height: 400))
         let image = ctx.makeImage()!
         let preview = PhotoPreview(source: image, lit: image, dark: image, flare: image)
+        let eightScene = LoupeSceneInput(photos: [LoupeScenePhoto(preview: preview,
+            center: CGPoint(x: 300, y: 200), imageSize: CGSize(width: 600, height: 400))],
+            point: CGPoint(x: 310, y: 200), panelBounds: nil, transmission: 1, flare: 0, brightness: 1)
+        let eightInput = LoupeSampling(in: CGSize(width: 840, height: 640), closeViewing: true,
+                                      mode: .eight, progress: 1).input(scene: eightScene, displayScale: 1)
+        let eightRequest = LoupeRasterRequest(eightInput)
+        let quickEight = eightRequest.quick
+        check(eightRequest.magnification == eightInput.magnification && eightRequest.diameter == eightInput.diameter,
+              "GPU and software fallback receive the same 8x sampling geometry")
+        check(abs(quickEight.diameter / quickEight.magnification! - eightRequest.diameter / eightRequest.magnification!) < 1e-8,
+              "quick 8x fallback preserves the final source field when lowering resolution")
+        var glassRequest = eightRequest
+        glassRequest.refractionScale = 0.4
+        check(glassRequest.quick.refractionScale == 0.4, "quick fallback retains glass refraction strength")
+        let eightImage = LoupeRenderer.shared.render(photos: eightScene.photos, point: eightScene.point,
+            diameter: eightInput.diameter, magnification: eightInput.magnification, displayScale: 1,
+            transmission: 1, flare: 0, brightness: 1)!
+        let eightBitmap = NSBitmapImageRep(cgImage: eightImage)
+        let near = eightBitmap.colorAt(x: eightImage.width / 2 - 40, y: eightImage.height / 2)!.usingColorSpace(.sRGB)!
+        let far = eightBitmap.colorAt(x: eightImage.width / 2 - 100, y: eightImage.height / 2)!.usingColorSpace(.sRGB)!
+        check(near.blueComponent > 0.7 && far.redComponent > 0.7,
+              "rendered 8x source boundary lies 80 pixels from the pointer, without a flip")
         func photo(_ placement: SlidePlacement) -> LoupeScenePhoto {
             LoupeScenePhoto(preview: preview, center: CGPoint(x: placement.x, y: placement.y),
                             imageSize: CGSize(width: placement.width, height: placement.height), angle: placement.angle)
@@ -250,6 +308,8 @@ private actor RasterGate {
         check(received[slide.id] == rotated, "SwiftUI geometry preference publishes live pinch and rotation")
 
         let state = LoupeExperience()
+        check(state.closeMagnification == .original, "original close magnification remains the default")
+        state.closeMagnification = .eight
         let scene = LoupeSceneInput(photos: [photo(enlarged)], point: point,
                                    panelBounds: CGRect(origin: .zero, size: board), transmission: 1, flare: 0, brightness: 1)
         state.pointer = point
@@ -279,6 +339,7 @@ private actor RasterGate {
         check(state.anchor == nil && !state.cursorHidden, "normal return completes and restores the pointer after the new duration")
         _ = state.press(); state.cancel()
         check(state.anchor == nil && !state.cursorHidden && !state.isClose, "cancellation balances cursor and clears close state")
+        check(state.closeMagnification == .eight, "pointer mode and cancellation retain the selected close magnification")
 
         let tracking = LoupeExperience()
         tracking.scene = scene; tracking.pointer = point
@@ -476,10 +537,10 @@ private actor RasterGate {
         monitor.released = { releases += 1 }
         monitor.cancelled = { cancellations += 1 }
         func key(_ type: NSEvent.EventType, repeat repeated: Bool = false,
-                 modifiers: NSEvent.ModifierFlags = [], number: Int? = nil) -> NSEvent {
+                 modifiers: NSEvent.ModifierFlags = [], number: Int? = nil, code: UInt16 = 49) -> NSEvent {
             NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers, timestamp: 0,
-                windowNumber: number ?? window.windowNumber, context: nil, characters: " ",
-                charactersIgnoringModifiers: " ", isARepeat: repeated, keyCode: 49)!
+                windowNumber: number ?? window.windowNumber, context: nil, characters: code == 48 ? "\t" : " ",
+                charactersIgnoringModifiers: code == 48 ? "\t" : " ", isARepeat: repeated, keyCode: code)!
         }
         check(monitor.handle(key(.keyDown)) == nil && monitor.handle(key(.keyDown, repeat: true)) == nil && presses == 1,
               "keyboard consumes held space without autorepeat reentry or beep")
@@ -499,6 +560,55 @@ private actor RasterGate {
               "window focus loss clears held-space state")
         monitor.enabled = false
         check(monitor.handle(key(.keyDown)) != nil && presses == 2, "pointer mode leaves space unhandled")
+
+        var cycles = 0
+        state.closeMagnification = .original
+        monitor.cycleMagnification = { cycles += 1; state.cycleMagnification() }
+        check(monitor.handle(key(.keyDown, code: 48)) != nil && cycles == 0,
+              "pointer mode leaves Tab for normal focus navigation")
+        monitor.enabled = true
+        check(monitor.handle(key(.keyDown, code: 48)) == nil && cycles == 1 && state.closeMagnification == .eight,
+              "Tab selects 8x while the ordinary lens is active")
+        check(monitor.handle(key(.keyDown, repeat: true, code: 48)) == nil && cycles == 1,
+              "holding Tab does not repeatedly cycle magnifications")
+        check(monitor.handle(key(.keyUp, modifiers: .shift, code: 48)) == nil,
+              "Tab release is consumed even when modifiers change during the hold")
+        check(monitor.handle(key(.keyDown, code: 48)) == nil && cycles == 2 && state.closeMagnification == .original,
+              "a second Tab press returns to the original magnification")
+        _ = monitor.handle(key(.keyUp, code: 48))
+        monitor.pressed = { state.press() }
+        monitor.released = { state.release(reduceMotion: true) }
+        monitor.cancelled = { cancellations += 1; state.cancel() }
+        _ = monitor.handle(key(.keyDown))
+        let heldPoint = state.sourcePoint
+        check(monitor.handle(key(.keyDown, code: 48)) == nil && state.closeMagnification == .eight &&
+              state.isClose && state.cursorHidden && state.sourcePoint == heldPoint,
+              "Tab changes magnification during held-space viewing without dropping the lens or source point")
+        _ = monitor.handle(key(.keyUp, code: 48))
+        check(monitor.handle(key(.keyUp)) == nil && !state.isClose && !state.cursorHidden,
+              "space release still returns normally after a Tab magnification change")
+        for modifiers: NSEvent.ModifierFlags in [.command, .control, .option, .shift] {
+            check(monitor.handle(key(.keyDown, modifiers: modifiers, code: 48)) != nil && cycles == 3,
+                  "modified Tab passes through: \(modifiers.rawValue)")
+        }
+        window.makeFirstResponder(text)
+        check(monitor.handle(key(.keyDown, code: 48)) != nil && cycles == 3,
+              "text input retains Tab navigation")
+        window.makeFirstResponder(monitor)
+        check(monitor.handle(key(.keyDown, number: 0, code: 48)) != nil && cycles == 3,
+              "Tab from another window does not change magnification")
+        check(monitor.handle(key(.keyDown, repeat: true, code: 48)) != nil && cycles == 3,
+              "a stray Tab repeat without a captured press does not change magnification")
+        _ = monitor.handle(key(.keyDown, code: 48))
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        check(monitor.handle(key(.keyUp, code: 48)) != nil &&
+              monitor.handle(key(.keyDown, code: 48)) == nil && cycles == 5,
+              "focus loss clears Tab state so the next press can switch again")
+        monitor.enabled = false
+        monitor.reset()
+        check(monitor.handle(key(.keyUp, code: 48)) != nil &&
+              monitor.handle(key(.keyDown, code: 48)) != nil && cycles == 5,
+              "leaving loupe mode clears Tab capture and restores normal navigation")
         monitor.stop()
         check(cancellations > 1, "view teardown cancels input state and removes monitor")
         print("RESULT \(count) passed; 0 failed")

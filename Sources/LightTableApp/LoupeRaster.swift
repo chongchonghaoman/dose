@@ -25,7 +25,10 @@ struct LoupeRasterRequest: Equatable, @unchecked Sendable {
         // A cropped animation frame already has a bounded output. Changing its
         // optical diameter here would also change the sampled source region.
         if viewport != nil { return self }
-        return Self(scene: scene, diameter: min(diameter, LoupeGeometry.diameter), displayScale: displayScale)
+        let quickDiameter = min(diameter, LoupeGeometry.diameter)
+        return Self(scene: scene, diameter: quickDiameter, displayScale: displayScale,
+                    magnification: magnification.map { $0 * quickDiameter / diameter },
+                    refractionScale: refractionScale)
     }
 }
 

@@ -84,7 +84,8 @@ struct ContentView: View {
             LoupeKeyboard(enabled: !model.slideshowMode && model.loupeEnabled && flight == nil && !model.albumEditorPresented,
                           pressed: { loupe.press() },
                           released: { loupe.release(reduceMotion: reduceMotion) },
-                          cancelled: { loupe.cancel() }).frame(width: 0, height: 0)
+                          cancelled: { loupe.cancel() },
+                          cycleMagnification: { loupe.cycleMagnification() }).frame(width: 0, height: 0)
         }
         .task(id: flight?.phase == .dragging) {
             guard flight?.phase == .dragging else { return }
@@ -129,8 +130,14 @@ struct ContentView: View {
         HStack(spacing: 9) {
             HStack(spacing: 2) {
                 tool("arrow.up.and.down.and.arrow.left.and.right", "普通指针（A）", active: !model.loupeEnabled) { model.loupeEnabled = false }
-                tool("viewfinder.circle", "放大镜（V）；按住空格凑近，松开退回", active: model.loupeEnabled) { model.loupeEnabled.toggle() }
+                tool("viewfinder.circle", "放大镜（V）；按住空格凑近，松开退回；Tab切换倍率", active: model.loupeEnabled) { model.loupeEnabled.toggle() }
             }.padding(4).background(TableStyle.chrome, in: Capsule())
+            if model.loupeEnabled {
+                LoupeMagnificationControl(selection: $loupe.closeMagnification)
+                    .padding(4).frame(height: 38)
+                    .background(TableStyle.chrome, in: Capsule())
+                    .help("点击、拖动或按Tab切换空格凑近倍率：原倍率随窗口适配，8×固定放大；小镜子保持1.5×")
+            }
             HStack(spacing: 2) {
                 tool("minus", "缩小台面视野") { model.zoomCanvas(by: 1 / 1.2) }
                 Button("整理全局", action: model.fitToWindow).buttonStyle(.plain).font(.system(size: 11)).padding(.horizontal, 5)
@@ -449,7 +456,8 @@ struct TableCanvas: View {
             let canvasRect = CGRect(origin: .zero, size: proxy.size)
             let lensPoint = model.loupeEnabled && draggingID == nil && liftedPhoto == nil && !isPanning ? loupe.sourcePoint.flatMap { canvasRect.contains($0) ? $0 : nil } : nil
             let viewport = lensPoint.map {
-                LoupeRenderer.sourceViewport(point: $0, diameter: OpticalLoupe.diameter, magnification: OpticalLoupe.magnification)
+                LoupeGeometry.sourceViewport(point: $0, in: loupe.viewingSize,
+                    closeViewing: loupe.anchor != nil, mode: loupe.closeMagnification)
             }
             let lensItems = sceneItems(viewport: viewport, offset: rect.origin)
             ZStack(alignment: .topLeading) {

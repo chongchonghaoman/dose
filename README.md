@@ -1,8 +1,10 @@
 # 观片台 · LightTable
 
+<img src="Assets/AppIcon.png" alt="观片台透光胶片图标" width="128">
+
 一款本地运行的 macOS 观片应用，模拟反转片灯箱与幻灯机。导入照片，自由摆片、开灯、用放大镜观察，或进入黑底全屏幻灯模式。
 
-A local macOS light table and slide projector for viewing photographs.
+A local macOS light table and slide projector for viewing photographs, with optional GitHub update checks.
 
 ## 下载与运行
 
@@ -12,7 +14,19 @@ A local macOS light table and slide projector for viewing photographs.
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-**v0.1.65 公开版为静音版**：保留收片、出场、黑场和入场动画，不包含第三方快门录音。
+当前版本 **[v0.1.70](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.70)** 已加入正式App图标，恢复幻灯换片声，支持应用内更新、大放大镜「原倍率 / 8×」滑块和Tab切换。
+
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.70/LightTable-v0.1.70-macOS-arm64.zip)**
+
+从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
+
+## 应用内更新
+
+- 每次启动后台检查GitHub正式版本一次；同一次运行中开启多个窗口不会重复检查。无新版时不弹窗，不上传照片或布局。
+- 有新版时提示版本与更新内容；点击下载后，在App内选择「安装并重启」。安装前验证更新包与更新信息的签名，重启前保存布局。
+- 菜单栏「观片台 → 检查更新…」可随时手动检查；「自动检查更新」可关闭后台检查。持续运行时每24小时再检查一次。
+- 下载或网络错误可重试，不修改现有应用；更新包由GitHub Releases提供。
+- v0.1.70起提供签名更新源。发行维护说明见 [发布步骤](docs/RELEASING.md)。
 
 ## 功能
 
@@ -20,17 +34,18 @@ A local macOS light table and slide projector for viewing photographs.
 - 从底栏拖片到台面，自由移动、旋转、缩放；平移和缩放整个观片区域。
 - 「一键平铺」将图库中的照片重新摆放到台面；**会清空当前散片布局并重新排列**。
 - 开关灯与亮度调整，带短暂过曝回落效果。
-- 放大镜观察，按住空格凑近，松开退回。
+- 普通放大镜1.5×；按住空格凑近，可选随窗口适配的原倍率或固定8×，松开退回。
 - 胶片袋式相册页与整页摆放。
 - 全屏幻灯：黑色背景、居中单张照片、随机播放顺序和机械换片动画；幻灯模式不显示放大镜。
 - 布局和预览缓存保存在本机；不修改照片原文件。
+- 首张入场与后续换片的快门声，带较轻音量和房间反射。
 
 ## 使用
 
 1. 点击「选择文件夹」或「添加照片」，也可以把照片、文件夹拖入底栏。
 2. 将照片拖到台面，或点击「一键平铺」放置全部照片。
 3. 开灯观看，通过亮度滑杆调整灯箱；选中照片后可旋转、缩放或移出台面。
-4. 切换到放大镜，用鼠标移动取景，按住空格凑近观察。
+4. 切换到放大镜，其右侧会出现「原倍率 / 8×」胶囊；点击、拖动或按Tab切换倍率，用鼠标移动取景，按住空格凑近观察。凑近时也可按Tab切换；切回普通指针时隐藏倍率控件。
 5. 点击幻灯片按钮进入全屏；按 **↓ / →** 看下一张，按 **↑ / ←** 返回上一张。
 6. 点击「返回观片台」或按 **Esc** 退出幻灯，回到原来的台面。
 
@@ -42,6 +57,7 @@ A local macOS light table and slide projector for viewing photographs.
 | ⇧⌘O | 添加照片 |
 | ⌘L | 开灯 / 关灯 |
 | A / V | 普通指针 / 放大镜 |
+| Tab | 放大镜模式下切换原倍率 / 8× |
 | 按住空格 | 凑近观察；松开退回 |
 | ⌘0 | 整理台面并回到全局 |
 | Delete | 将选中照片移出台面 |
@@ -68,7 +84,7 @@ zsh scripts/build-app.sh
 zsh scripts/build-app.sh "dist/custom/观片台.app"
 ```
 
-项目使用 SwiftUI、AppKit、Core Image 和 Metal，SwiftPM 没有第三方软件包依赖。源码可自行编译；目前不声明 Intel 构建或运行已经验证。
+项目使用 SwiftUI、AppKit、Core Image 和 Metal；SwiftPM固定依赖Sparkle 2.10.0用于更新，首次构建需下载依赖。源码可自行编译；目前不声明 Intel 构建或运行已经验证。
 
 ## 检查
 
@@ -84,6 +100,7 @@ bash scripts/check-closeup.sh
 bash scripts/check-albums.sh
 bash scripts/check-optics.sh
 bash scripts/check-slideshow.sh
+bash scripts/check-updates.sh
 ```
 
 它们覆盖布局、拖放、灯光、镜片、相册与幻灯状态等逻辑。图形相关检查需要能够使用 macOS 图形框架的环境；检查通过不等于所有设备上的动画流畅度已经实测。
@@ -98,4 +115,4 @@ swift test
 
 通过 [Issues](https://github.com/fuyuan9972-svg/LightTable/issues) 报告问题，请附 macOS 版本、芯片型号和复现步骤。提交截图或录屏前，请移除不希望公开的照片及个人信息。
 
-代码采用 [MIT 许可证](LICENSE)。依赖与素材说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。
+原创代码采用 [MIT 许可证](LICENSE)。Sparkle及第三方音频遵循各自许可，不纳入本项目的MIT授权；依赖与素材说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。

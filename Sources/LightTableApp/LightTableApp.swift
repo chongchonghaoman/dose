@@ -3,11 +3,13 @@ import SwiftUI
 @main
 struct LightTableApp: App {
     @State private var model = TableModel()
+    @StateObject private var updater = AppUpdater()
     var body: some Scene {
         WindowGroup("观片台") {
             ContentView(model: model)
                 .frame(minWidth: 840, minHeight: 640)
                 .preferredColorScheme(.light)
+                .task { updater.start(beforeRelaunch: model.flushSave) }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.flushSave() }
                 .onDisappear { model.flushSave() }
                 .onOpenURL { url in Task { await model.importURLs([url]) } }
@@ -15,6 +17,14 @@ struct LightTableApp: App {
         .defaultSize(width: 1180, height: 900)
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("检查更新…", action: updater.checkForUpdates)
+                    .disabled(!updater.canCheckForUpdates)
+                Toggle("自动检查更新", isOn: Binding(get: { updater.automaticChecks },
+                                                    set: updater.setAutomaticChecks))
+                    .disabled(!updater.isAvailable)
+                Divider()
+            }
             CommandGroup(replacing: .newItem) {
                 Button("选择照片文件夹…", action: model.chooseFolder).keyboardShortcut("o")
                     .disabled(model.slideshowMode)
