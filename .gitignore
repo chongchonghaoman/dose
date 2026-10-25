@@ -1,0 +1,11 @@
+.DS_Store
+.build/
+.swiftpm/
+.work/
+builds/
+dist/
+*.xcodeproj
+*.swp
+*~
+*.dSYM/
+debug-*

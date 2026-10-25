@@ -1,0 +1,488 @@
+import AppKit
+import SwiftUI
+import UniformTypeIdentifiers
+import LightTableCore
+
+@MainActor
+@Observable
+final class TableModel {
+    static let defaultLampBrightness = 1.0
+    var photos: [Photo] = []
+    var layout = TableLayout()
+    var albums: [AlbumPage] = []
+    var tableOrder: [UUID] = []
+    var albumEditorPresented = false
+    var editingAlbumID: UUID?
+    var selectedID: UUID?
+    // One clock for the panel, slides and loupe; placing a photo never restarts it.
+    private(set) var lightStartedAt: TimeInterval?
+    @ObservationIgnored private var preparingLightSurfaces = Set<UUID>()
+    var isLit = false {
+        didSet {
+            guard isLit != oldValue else { return }
+            lightStartedAt = isLit && preparingLightSurfaces.isEmpty ? ProcessInfo.processInfo.systemUptime : nil
+        }
+    }
+    var loupeEnabled = false
+    var slideshowMode = false
+    var slideshowIndex = 0
+    private(set) var slideshowOrder: [URL] = []
+    var zoom = 1.0
+    private(set) var fitScale = 1.0
+    // fitScale preserves the existing packed layout; zoom belongs to the camera.
+    var displayZoom: Double { fitScale }
+    var pan = CGPoint.zero
+    private(set) var referenceSize: CGSize?
+    var boardSize = CGSize.zero {
+        didSet {
+            if referenceSize == nil, boardSize.width > 1, boardSize.height > 1 {
+                referenceSize = boardSize
+            }
+        }
+    }
+    var worldSize: CGSize { referenceSize ?? (boardSize.width > 1 ? boardSize : CGSize(width: 1180, height: 550)) }
+    var viewport: TableViewport { TableViewport(scale: zoom, offsetX: pan.x, offsetY: pan.y) }
+    private(set) var imageAspects: [URL: Double] = [:]
+    var lampBrightness = TableModel.defaultLampBrightness
+    let transmissionEnabled = true
+    var sourceLabel = "你的照片"
+    var isImporting = false
+    var message: String?
+    private(set) var thumbnails: [URL: CGImage] = [:]
+    private(set) var preparedPreviews: [URL: PhotoPreview] = [:]
+    private var thumbnailOrder: [URL] = []
+    private var previewOrder: [URL] = []
+    @ObservationIgnored private var previewTasks: [URL: Task<PhotoPreview?, Never>] = [:]
+    private let storageURL: URL?
+    private var saveTask: Task<Void, Never>?
+    private var importsInFlight = 0
+
+    init(restore: Bool = true, storageURL overrideURL: URL? = nil, legacyCacheDirectory: URL? = nil) {
+        storageURL = overrideURL ?? (restore ? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?.appendingPathComponent("OurLightTable/layout-v1.json") : nil)
+        if restore, let storageURL, let data = try? Data(contentsOf: storageURL),
+           let saved = try? JSONDecoder().decode(Saved.self, from: data) {
+            var restored = saved
+            let aliases = PhotoLibrary.legacyDragAliases(in: saved.urls + saved.layout.slides.map(\.url), cacheDirectory: legacyCacheDirectory)
+            if !aliases.isEmpty {
+                do {
+                    // Back up the exact previous bytes before any migration can be saved.
+                    let backup = storageURL.deletingPathExtension().appendingPathExtension("backup-v0.1.2-\(UUID().uuidString).json")
+                    try data.write(to: backup, options: .atomic)
+                    restored = try Self.remapping(saved, aliases: aliases)
+                } catch {
+                    message = "旧拖片记录暂时无法修复：\(error.localizedDescription)"
+                }
+            }
+            layout = restored.layout.sanitized()
+            var pageIDs = Set<UUID>()
+            albums = (restored.albums ?? []).filter { pageIDs.insert($0.id).inserted }.map { $0.sanitized() }
+            tableOrder = restored.tableOrder ?? []
+            if let width = restored.worldWidth, let height = restored.worldHeight,
+               width.isFinite, height.isFinite, width > 1, height > 1 {
+                referenceSize = CGSize(width: width, height: height)
+            }
+            if let camera = restored.viewport {
+                let valid = TableViewport(scale: camera.scale, offsetX: camera.offsetX, offsetY: camera.offsetY)
+                zoom = min(8, max(0.05, valid.scale)); pan = CGPoint(x: valid.offsetX, y: valid.offsetY)
+            }
+            if let scale = restored.fitScale, scale.isFinite, scale > 0, scale <= 1 { fitScale = scale }
+            for slide in layout.slides where !PhotoLibrary.supported(slide.url) { layout.remove(slide.id) }
+            var seen = Set<URL>()
+            photos = (restored.urls + layout.slides.map(\.url) + albums.flatMap { $0.pockets.compactMap(\.url) }).map(\.standardizedFileURL)
+                .filter { PhotoLibrary.supported($0) && seen.insert($0).inserted }.map { Photo(url: $0) }
+            sourceLabel = restored.label
+            if !aliases.isEmpty && message == nil { persist(to: storageURL) }
+        }
+    }
+
+    var selected: Slide? { layout.slides.first { $0.id == selectedID } }
+
+    func beginLightPreparation(_ id: UUID) { preparingLightSurfaces.insert(id) }
+
+    func finishLightPreparation(_ id: UUID) {
+        preparingLightSurfaces.remove(id)
+        if isLit && lightStartedAt == nil && preparingLightSurfaces.isEmpty {
+            lightStartedAt = ProcessInfo.processInfo.systemUptime
+        }
+    }
+
+    func cacheThumbnail(_ image: CGImage, for url: URL) {
+        thumbnails[url] = image
+        if imageAspects[url] == nil { imageAspects[url] = Double(image.width) / Double(image.height) }
+        thumbnailOrder.removeAll { $0 == url }; thumbnailOrder.append(url)
+        while thumbnailOrder.count > 300 { thumbnails.removeValue(forKey: thumbnailOrder.removeFirst()) }
+    }
+
+    func preparePreview(_ url: URL) async -> PhotoPreview? {
+        if let cached = preparedPreviews[url] { return cached }
+        if let task = previewTasks[url] { return await task.value }
+        let task = Task { await PhotoStore.shared.preview(url) }
+        previewTasks[url] = task
+        let loaded = await task.value
+        previewTasks[url] = nil
+        guard let image = loaded else { return nil }
+        preparedPreviews[url] = image
+        imageAspects[url] = Double(image.aspect)
+        previewOrder.removeAll { $0 == url }; previewOrder.append(url)
+        let placed = Set(layout.slides.map(\.url) + albums.filter { $0.position != nil }.flatMap { $0.pockets.compactMap(\.url) })
+        while previewOrder.count > 12,
+              let index = previewOrder.firstIndex(where: { !placed.contains($0) }) {
+            preparedPreviews.removeValue(forKey: previewOrder.remove(at: index))
+        }
+        return image
+    }
+
+    func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "选择照片文件夹"; panel.prompt = "读取照片"
+        panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK { Task { await importURLs(panel.urls, replace: true) } }
+    }
+
+    func choosePhotos() {
+        let panel = NSOpenPanel()
+        panel.title = "添加照片"; panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true; panel.canChooseDirectories = false
+        if panel.runModal() == .OK { Task { await importURLs(panel.urls) } }
+    }
+
+    func importURLs(_ urls: [URL], replace: Bool = false) async {
+        importsInFlight += 1
+        isImporting = true
+        defer { importsInFlight -= 1; isImporting = importsInFlight > 0 }
+        let found = await Task.detached(priority: .userInitiated) { PhotoLibrary.scan(urls) }.value
+        guard !found.isEmpty else { message = "这里没有可读取的照片。支持 JPG、PNG、HEIC、TIFF 及系统支持的 RAW。"; return }
+        if replace {
+            photos = found.map { Photo(url: $0) }
+            sourceLabel = urls.first?.lastPathComponent ?? "你的照片"
+        } else {
+            let existing = Set(photos.map { $0.url })
+            photos += found.filter { !existing.contains($0) }.map { Photo(url: $0) }
+        }
+        save()
+    }
+
+    func place(_ url: URL, x: Double, y: Double) {
+        guard PhotoLibrary.supported(url) else { return }
+        let id = layout.place(url, x: x, y: y)
+        select(id)
+        if !photos.contains(where: { $0.url == url.standardizedFileURL }) {
+            photos.append(Photo(url: url.standardizedFileURL))
+        }
+        save()
+    }
+
+    func select(_ id: UUID) {
+        selectedID = id
+        synchronizeOrder()
+        layout.bringToFront(id)
+        tableOrder.removeAll { $0 == id }; tableOrder.append(id)
+        save()
+    }
+    func update(_ id: UUID, change: (inout Slide) -> Void) { layout.update(id, change); save() }
+    func removeSelected() {
+        guard let selectedID else { return }
+        if albums.contains(where: { $0.id == selectedID }) {
+            updateAlbum(selectedID) { $0.position = nil }
+            tableOrder.removeAll { $0 == selectedID }; self.selectedID = nil; save(); return
+        }
+        layout.remove(selectedID); self.selectedID = nil
+        if layout.slides.isEmpty { fitScale = 1 }
+        save()
+    }
+    func clear() {
+        layout.clear(); selectedID = nil; fitScale = 1; zoom = 1; pan = .zero
+        for i in albums.indices { albums[i].position = nil }; tableOrder = []
+        referenceSize = boardSize.width > 1 ? boardSize : nil
+        save()
+    }
+
+    func enterSlideshow() {
+        guard !slideshowMode, !photos.isEmpty else { return }
+        slideshowOrder = photos.map(\.url).shuffled()
+        slideshowIndex = 0
+        slideshowMode = true
+    }
+
+    func exitSlideshow() {
+        slideshowMode = false
+        slideshowOrder = []
+        slideshowIndex = 0
+    }
+
+    func nextSlide() {
+        guard slideshowMode, !slideshowOrder.isEmpty else { return }
+        slideshowIndex = (slideshowIndex + 1) % slideshowOrder.count
+    }
+
+    func previousSlide() {
+        guard slideshowMode, !slideshowOrder.isEmpty else { return }
+        slideshowIndex = (slideshowIndex - 1 + slideshowOrder.count) % slideshowOrder.count
+    }
+
+    var currentSlideURL: URL? {
+        guard slideshowMode, slideshowOrder.indices.contains(slideshowIndex) else { return nil }
+        return slideshowOrder[slideshowIndex]
+    }
+
+    var nextSlideURL: URL? {
+        guard currentSlideURL != nil else { return nil }
+        return slideshowOrder[(slideshowIndex + 1) % slideshowOrder.count]
+    }
+
+
+    func panBy(_ delta: CGSize) {
+        guard delta.width.isFinite, delta.height.isFinite else { return }
+        pan.x += delta.width; pan.y += delta.height
+        save()
+    }
+
+    func zoomCanvas(by factor: Double, around point: CGPoint? = nil) {
+        guard factor.isFinite, factor > 0 else { return }
+        let anchor = point ?? CGPoint(x: boardSize.width / 2, y: boardSize.height / 2)
+        var camera = viewport
+        camera.zoom(to: zoom * factor, aroundX: anchor.x, aroundY: anchor.y)
+        zoom = camera.scale; pan = CGPoint(x: camera.offsetX, y: camera.offsetY)
+        save()
+    }
+
+    func screenPlacement(_ slide: Slide, aspect: Double) -> SlidePlacement {
+        viewport.screen(TableCoordinates.placement(slide, boardWidth: worldSize.width,
+            boardHeight: worldSize.height, imageAspect: aspect, zoom: fitScale))
+    }
+
+    func normalizedWorldPoint(_ point: CGPoint) -> CGPoint {
+        let world = viewport.world(x: point.x, y: point.y)
+        return CGPoint(x: world.x / worldSize.width, y: world.y / worldSize.height)
+    }
+
+    func placeAtViewCenter(_ url: URL) {
+        let point = normalizedWorldPoint(CGPoint(x: boardSize.width / 2, y: boardSize.height / 2))
+        place(url, x: point.x, y: point.y)
+    }
+
+    func fitToWindow() {
+        guard boardSize.width > 1, boardSize.height > 1 else { return }
+        if albums.contains(where: { $0.position != nil }) { fitAlbumsAndSlides(); return }
+        for slide in layout.slides where imageAspects[slide.url] == nil {
+            imageAspects[slide.url] = PhotoLibrary.imageAspect(slide.url)
+        }
+        referenceSize = boardSize
+        pan = .zero
+        fitScale = layout.fitToWindow(boardWidth: boardSize.width, boardHeight: boardSize.height, imageAspects: imageAspects)
+        zoom = 1
+        save()
+    }
+
+    func placeAllPhotos() {
+        guard boardSize.width > 1, boardSize.height > 1 else { return }
+        let urls = photos.map(\.url)
+        guard !urls.isEmpty else { return }
+
+        // 先清空当前台面
+        layout.clear()
+
+        // 放置所有照片到中心
+        for url in urls {
+            let id = layout.place(url, x: 0.5, y: 0.5)
+            layout.update(id) { $0.width = Slide.defaultWidth }
+        }
+
+        // 使用 fitToWindow 的逻辑来排列
+        for slide in layout.slides where imageAspects[slide.url] == nil {
+            imageAspects[slide.url] = PhotoLibrary.imageAspect(slide.url)
+        }
+        referenceSize = boardSize
+        pan = .zero
+        fitScale = layout.fitToWindow(boardWidth: boardSize.width, boardHeight: boardSize.height, imageAspects: imageAspects)
+        zoom = 1
+        selectedID = nil
+
+        save()
+    }
+
+    var onTableAlbums: [AlbumPage] { albums.filter { $0.position != nil } }
+    var tableIDs: [UUID] {
+        let available = layout.slides.map(\.id) + onTableAlbums.map(\.id)
+        var seen = Set<UUID>()
+        return (tableOrder + available).filter { available.contains($0) && seen.insert($0).inserted }
+    }
+    func layerIndex(_ id: UUID) -> Double { Double(tableIDs.firstIndex(of: id) ?? 0) }
+    private func synchronizeOrder() { tableOrder = tableIDs }
+    @discardableResult func newAlbum() -> UUID {
+        let page = AlbumPage(name: "相册第 \(albums.count + 1) 页")
+        albums.append(page); editingAlbumID = page.id; save(); return page.id
+    }
+    func updateAlbum(_ id: UUID, _ change: (inout AlbumPage) -> Void) {
+        guard let index = albums.firstIndex(where: { $0.id == id }) else { return }
+        change(&albums[index]); save()
+    }
+    func deleteAlbum(_ id: UUID) {
+        albums.removeAll { $0.id == id }; tableOrder.removeAll { $0 == id }
+        if selectedID == id { selectedID = nil }
+        if editingAlbumID == id { editingAlbumID = albums.first?.id }
+        save()
+    }
+    func placeAlbum(_ id: UUID, at point: CGPoint? = nil) {
+        guard albums.contains(where: { $0.id == id }) else { return }
+        let center = point ?? CGPoint(x: boardSize.width / 2, y: boardSize.height / 2)
+        let world = viewport.world(x: center.x, y: center.y)
+        updateAlbum(id) { $0.position = CGPoint(x: world.x, y: world.y) }
+        select(id)
+    }
+    func albumFrame(_ page: AlbumPage) -> CGRect {
+        let p = page.position ?? .zero
+        let center = viewport.screen(x: p.x, y: p.y)
+        return CGRect(x: center.x - AlbumPage.size.width * zoom / 2,
+                      y: center.y - AlbumPage.size.height * zoom / 2,
+                      width: AlbumPage.size.width * zoom, height: AlbumPage.size.height * zoom)
+    }
+    private func fitAlbumsAndSlides() {
+        referenceSize = boardSize; fitScale = 1
+        for slide in layout.slides {
+            if imageAspects[slide.url] == nil { imageAspects[slide.url] = PhotoLibrary.imageAspect(slide.url) }
+            layout.update(slide.id) { $0.width = Slide.defaultWidth }
+        }
+        let ids = tableIDs
+        var maxW = AlbumPage.size.width, maxH = AlbumPage.size.height
+        for slide in layout.slides {
+            let p = TableCoordinates.placement(slide, boardWidth: worldSize.width, boardHeight: worldSize.height,
+                                                imageAspect: imageAspects[slide.url] ?? 1.5)
+            let c = abs(cos(p.angle * .pi / 180)), s = abs(sin(p.angle * .pi / 180))
+            maxW = max(maxW, p.width * c + p.height * s)
+            maxH = max(maxH, p.width * s + p.height * c)
+        }
+        let gap = 28.0
+        var best = 0.0, columns = 1
+        for cols in 1...max(1, ids.count) {
+            let rows = (ids.count + cols - 1) / cols
+            let scale = min(1, (boardSize.width - 48) / (Double(cols) * (maxW + gap) - gap),
+                            (boardSize.height - 48) / (Double(rows) * (maxH + gap) - gap))
+            if scale > best { best = scale; columns = cols }
+        }
+        let rows = (ids.count + columns - 1) / columns
+        let totalW = Double(columns) * (maxW + gap) - gap
+        let totalH = Double(rows) * (maxH + gap) - gap
+        let size = worldSize
+        for (index, id) in ids.enumerated() {
+            let center = CGPoint(x: maxW / 2 + Double(index % columns) * (maxW + gap),
+                                 y: maxH / 2 + Double(index / columns) * (maxH + gap))
+            if let i = albums.firstIndex(where: { $0.id == id }) { albums[i].position = center }
+            else { layout.update(id) { $0.x = center.x / size.width; $0.y = center.y / size.height } }
+        }
+        zoom = max(0.01, best)
+        pan = CGPoint(x: (boardSize.width - totalW * zoom) / 2, y: (boardSize.height - totalH * zoom) / 2)
+        save()
+    }
+
+    func accept(_ providers: [NSItemProvider], at point: CGPoint?, board: CGRect?) -> Bool {
+        guard providers.contains(where: { provider in
+            (PhotoDrag.acceptedTypes + [AlbumDrag.contentType]).contains { provider.hasItemConformingToTypeIdentifier($0.identifier) }
+        }) else { return false }
+        Task { await acceptDrop(providers, at: point, board: board) }
+        return true
+    }
+
+    /// Awaitable entry point also used by isolated drop regression checks.
+    @discardableResult
+    func acceptDrop(_ providers: [NSItemProvider], at point: CGPoint?, board: CGRect?) async -> Bool {
+        // Capture the drop camera before asynchronous decoding/import can change it.
+        let dropCamera = viewport
+        let dropWorldSize = referenceSize ?? board?.size ?? worldSize
+        var internalURLs: [URL] = [], externalURLs: [URL] = []
+        var albumIDs: [UUID] = []
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(AlbumDrag.contentType.identifier) {
+                if let id = await AlbumDrag.pageID(from: provider), albums.contains(where: { $0.id == id }) { albumIDs.append(id) }
+            } else if provider.hasItemConformingToTypeIdentifier(PhotoDrag.contentType.identifier) {
+                // An invalid/stale internal reference cannot fall back to file import.
+                if let url = await PhotoDrag.sourceURL(from: provider),
+                   photos.contains(where: { $0.url == url }) { internalURLs.append(url) }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
+                      let url = await PhotoDrag.fileURL(from: provider) {
+                externalURLs.append(url)
+            }
+        }
+        guard !internalURLs.isEmpty || !externalURLs.isEmpty || !albumIDs.isEmpty else { return false }
+        // Folders always go to the tray, never automatically onto the lamp.
+        if !externalURLs.isEmpty { await importURLs(externalURLs) }
+        if let point, let board, board.width > 0, board.height > 0, board.contains(point) {
+            for id in albumIDs {
+                let world = dropCamera.world(x: point.x - board.minX, y: point.y - board.minY)
+                updateAlbum(id) { $0.position = CGPoint(x: world.x, y: world.y) }; select(id)
+            }
+            var offset = 0.0
+            for url in internalURLs + externalURLs where PhotoLibrary.supported(url) {
+                // Internal drags only place a current library member: never append/import.
+                guard photos.contains(where: { $0.url == url }) else { continue }
+                let world = dropCamera.world(x: point.x - board.minX + offset * board.width,
+                                             y: point.y - board.minY + offset * board.height)
+                selectedID = layout.place(url, x: world.x / dropWorldSize.width,
+                                          y: world.y / dropWorldSize.height)
+                if let selectedID { select(selectedID) }
+                offset += 0.035
+            }
+            save()
+        }
+        return true
+    }
+
+    private struct Saved: Codable {
+        var urls: [URL]; var layout: TableLayout; var label: String
+        var fitScale: Double? = nil
+        var worldWidth: Double? = nil
+        var worldHeight: Double? = nil
+        var viewport: TableViewport? = nil
+        var albums: [AlbumPage]? = nil
+        var tableOrder: [UUID]? = nil
+    }
+
+    /// JSON remapping preserves immutable slide IDs and geometry without changing
+    /// the core model API. Existing one-photo/one-slide semantics keep the topmost.
+    private static func remapping(_ saved: Saved, aliases: [URL: URL]) throws -> Saved {
+        var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as! [String: Any]
+        object["urls"] = saved.urls.map { (aliases[$0.standardizedFileURL] ?? $0).absoluteString }
+        var layoutObject = object["layout"] as! [String: Any]
+        let objects = layoutObject["slides"] as! [[String: Any]]
+        var seen = Set<URL>()
+        var mapped: [[String: Any]] = []
+        for (slide, record) in zip(saved.layout.slides, objects).reversed() {
+            let url = (aliases[slide.url.standardizedFileURL] ?? slide.url).standardizedFileURL
+            guard seen.insert(url).inserted else { continue }
+            var value = record
+            value["url"] = url.absoluteString
+            mapped.append(value)
+        }
+        layoutObject["slides"] = Array(mapped.reversed())
+        object["layout"] = layoutObject
+        return try JSONDecoder().decode(Saved.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    func save() {
+        guard let storageURL else { return }
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            persist(to: storageURL)
+        }
+    }
+
+    func flushSave() {
+        saveTask?.cancel()
+        guard let storageURL else { return }
+        persist(to: storageURL)
+    }
+
+    private func persist(to storageURL: URL) {
+        let saved = Saved(urls: photos.map(\.url), layout: layout, label: sourceLabel, fitScale: fitScale,
+                          worldWidth: referenceSize.map { Double($0.width) }, worldHeight: referenceSize.map { Double($0.height) }, viewport: viewport,
+                          albums: albums, tableOrder: tableOrder)
+        do {
+            try FileManager.default.createDirectory(at: storageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(saved).write(to: storageURL, options: .atomic)
+        } catch { message = "布局暂时无法保存：\(error.localizedDescription)" }
+    }
+}
