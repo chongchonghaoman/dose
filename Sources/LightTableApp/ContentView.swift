@@ -23,6 +23,10 @@ struct ContentView: View {
     @State private var entryPreparationID: UUID?
     @State private var entryPhotos: [SlideshowEntryPhoto] = []
     @State private var entryComplete = false
+    @State private var featureGuide = FeatureGuideState.shared
+    @State private var guideWindowID = UUID()
+    @State private var guideWindowReady = false
+    @State private var guideBounds = CGRect.zero
 
     init(model: TableModel, loupe: LoupeExperience? = nil) {
         self.model = model
@@ -34,7 +38,9 @@ struct ContentView: View {
             if !model.slideshowMode || !entryComplete {
                 VStack(spacing: 0) {
                     ZStack(alignment: .topTrailing) {
-                        TableCanvas(model: model, loupe: loupe, liftedPhoto: flight?.photo.url)
+                        TableCanvas(model: model, loupe: loupe, liftedPhoto: flight?.photo.url,
+                                    guideBlocked: featureGuide.isWelcome(in: guideWindowID),
+                                    guideExclusion: guideStep == nil ? nil : guideBounds.offsetBy(dx: -canvasFrame.minX, dy: -canvasFrame.minY))
                             .background(GeometryReader { proxy in
                                 Color.clear.preference(key: WorkbenchFrameKey.self, value: proxy.frame(in: .named("workbench")))
                             })
@@ -80,8 +86,38 @@ struct ContentView: View {
         .overlay {
             if !model.slideshowMode { LoupeOverlay(experience: loupe, canvasFrame: canvasFrame) }
         }
+        .overlayPreferenceValue(FeatureGuideAnchors.self) { anchors in
+            if let step = guideStep, !model.slideshowMode && !model.albumEditorPresented {
+                FeatureGuideTour(step: step, anchors: anchors, boardFrame: canvasFrame,
+                    hasPhotos: !model.tableIDs.isEmpty, selectedCount: model.selectedIDs.count,
+                    loupeEnabled: model.loupeEnabled,
+                    previous: { featureGuide.previous(in: guideWindowID) },
+                    next: { featureGuide.advance(in: guideWindowID) },
+                    close: { featureGuide.finish(in: guideWindowID) })
+            }
+        }
+        .coordinateSpace(name: "featureGuideOverlay")
+        .onPreferenceChange(FeatureGuideBounds.self) { guideBounds = $0 }
+        .background { FeatureGuideWindow { guideWindowReady = $0 }.frame(width: 0, height: 0) }
+        .focusedSceneValue(\.featureGuide, guideMenuAvailable ? FeatureGuideCommand(show: {
+            loupe.cancel(); returnToSleeve()
+            featureGuide.replay(in: guideWindowID)
+        }) : nil)
+        .task(id: guideReady) {
+            guard guideReady else { return }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            featureGuide.presentAutomatically(in: guideWindowID, ready: guideReady)
+        }
+        .sheet(isPresented: Binding(get: { featureGuide.isWelcome(in: guideWindowID) },
+                                   set: { if !$0 { featureGuide.dismissWelcome(in: guideWindowID) } })) {
+            FeatureGuideWelcome(version: featureGuide.version,
+                close: { featureGuide.finish(in: guideWindowID) },
+                tour: { featureGuide.beginTour(in: guideWindowID) })
+                .onAppear { featureGuide.didPresent(in: guideWindowID) }
+        }
         .background {
-            LoupeKeyboard(enabled: !model.slideshowMode && model.loupeEnabled && flight == nil && !model.albumEditorPresented,
+            LoupeKeyboard(enabled: !model.slideshowMode && model.loupeEnabled && flight == nil && !model.albumEditorPresented && !featureGuide.welcomeVisible,
                           pressed: { loupe.press() },
                           released: { loupe.release(reduceMotion: reduceMotion) },
                           cancelled: { loupe.cancel() },
@@ -105,6 +141,7 @@ struct ContentView: View {
         }
         .onChange(of: model.loupeEnabled) { _, enabled in if !enabled { loupe.cancel() } }
         .onChange(of: model.slideshowMode) { _, active in
+            if active { featureGuide.finish(in: guideWindowID) }
             loupe.cancel()
             flight = nil; flightPointer = nil; cancelledPull = false; releaseFlightCursor()
             if !active {
@@ -112,30 +149,44 @@ struct ContentView: View {
                 entryComplete = false; entryPhotos = []
             }
         }
-        .onExitCommand { loupe.cancel(); returnToSleeve() }
+        .onExitCommand {
+            loupe.cancel(); returnToSleeve()
+            if !model.slideshowMode && !model.albumEditorPresented { model.setSelection([]) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in returnToSleeve() }
         .onDisappear {
+            featureGuide.finish(in: guideWindowID)
             entryPreparationID = nil
             loupe.cancel(); flight = nil; cancelledPull = false; releaseFlightCursor()
         }
         .background(Color(white: 0.025))
         .sheet(isPresented: $model.albumEditorPresented) { AlbumEditor(model: model) }
-        .onChange(of: model.albumEditorPresented) { _, opened in if opened { loupe.cancel() } }
+        .onChange(of: model.albumEditorPresented) { _, opened in
+            if opened { loupe.cancel(); featureGuide.finish(in: guideWindowID) }
+        }
         .alert("观片台", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("好") { model.message = nil }
         } message: { Text(model.message ?? "") }
     }
 
+    private var guideStep: Int? { featureGuide.step(in: guideWindowID) }
+    private var guideMenuAvailable: Bool {
+        featureGuide.available && !model.slideshowMode && !model.albumEditorPresented && model.message == nil && flight == nil
+    }
+    private var guideReady: Bool { guideWindowReady && guideMenuAvailable && featureGuide.phase == .idle }
+
     private var tools: some View {
         HStack(spacing: 9) {
             HStack(spacing: 2) {
-                tool("arrow.up.and.down.and.arrow.left.and.right", "普通指针（A）", active: !model.loupeEnabled) { model.loupeEnabled = false }
+                tool("arrow.up.and.down.and.arrow.left.and.right", "普通指针（A）；⌘点选多张，Shift拖动框选，Delete移出台面", active: !model.loupeEnabled) { model.loupeEnabled = false }
                 tool("viewfinder.circle", "放大镜（V）；按住空格凑近，松开退回；Tab切换倍率", active: model.loupeEnabled) { model.loupeEnabled.toggle() }
             }.padding(4).background(TableStyle.chrome, in: Capsule())
+                .featureGuideTarget(.tools)
             if model.loupeEnabled {
                 LoupeMagnificationControl(selection: $loupe.closeMagnification)
                     .padding(4).frame(height: 38)
                     .background(TableStyle.chrome, in: Capsule())
+                    .featureGuideTarget(.magnification)
                     .help("点击、拖动或按Tab切换空格凑近倍率：原倍率随窗口适配，8×固定放大；小镜子保持1.5×")
             }
             HStack(spacing: 2) {
@@ -432,6 +483,8 @@ struct TableCanvas: View {
     @Bindable var model: TableModel
     var loupe: LoupeExperience
     var liftedPhoto: URL? = nil
+    var guideBlocked = false
+    var guideExclusion: CGRect? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var targeted = false
     @State private var lightAnimating = false
@@ -442,6 +495,8 @@ struct TableCanvas: View {
     @State private var canvasMagnification: CGFloat = 1
     @State private var canvasZoomAnchor: CGPoint?
     @State private var hasPanCursor = false
+    @State private var selectionRect: CGRect?
+    @State private var selectionBeforeMarquee: Set<UUID>?
     @GestureState private var isPanning = false
     @GestureState private var isCanvasZooming = false
 
@@ -508,6 +563,32 @@ struct TableCanvas: View {
                         .zIndex(model.layerIndex(page.id) + 1)
                 }
             }
+            .overlay(alignment: .topLeading) {
+                if let selectionRect {
+                    Rectangle().fill(Color.accentColor.opacity(0.10))
+                        .overlay(Rectangle().strokeBorder(Color.accentColor, lineWidth: 1))
+                        .frame(width: selectionRect.width, height: selectionRect.height)
+                        .position(x: selectionRect.midX, y: selectionRect.midY)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if !model.loupeEnabled && model.selectedIDs.count > 1 {
+                    HStack(spacing: 12) {
+                        Text("已选 \(model.selectedIDs.count) 项").monospacedDigit()
+                        Button(action: model.removeSelected) { Label("移出台面", systemImage: "trash") }
+                            .buttonStyle(.plain).help("Delete；底栏照片与原文件保留")
+                        Button { model.setSelection([]) } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.plain).accessibilityLabel("取消选择")
+                    }
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(TableStyle.ink)
+                    .padding(.horizontal, 14).frame(height: 36)
+                    .background(TableStyle.chrome, in: Capsule())
+                    .overlay(Capsule().stroke(Color.black.opacity(0.10), lineWidth: 1))
+                    .featureGuideTarget(.removal)
+                    .padding(16)
+                }
+            }
             .preference(key: LoupeSceneKey.self, value: lensPoint.map {
                 LoupeSceneInput(photos: lensItems.map(\.photo), point: $0, panelBounds: nil,
                     transmission: light.transmission, flare: light.flare, brightness: model.lampBrightness)
@@ -518,8 +599,22 @@ struct TableCanvas: View {
             .onChange(of: isCanvasZooming) { _, active in if !active { endCanvasZoom() } }
             .onDisappear { endPan(); endCanvasZoom() }
             .background {
-                CanvasNavigation(enabled: !model.slideshowMode && draggingID == nil && liftedPhoto == nil && !isPanning && !isCanvasZooming,
+                CanvasNavigation(enabled: !guideBlocked && !model.slideshowMode && draggingID == nil && liftedPhoto == nil && !isPanning && !isCanvasZooming && selectionBeforeMarquee == nil,
+                    excludedRect: guideExclusion,
                     moved: { model.panBy($0) }, zoomed: { model.zoomCanvas(by: $0, around: $1) })
+                CanvasSelection(enabled: !guideBlocked && !model.loupeEnabled && !model.slideshowMode && !model.albumEditorPresented
+                    && draggingID == nil && liftedPhoto == nil && !isPanning && !isCanvasZooming,
+                    excludedRect: guideExclusion,
+                    began: { selectionBeforeMarquee = model.selectedIDs },
+                    changed: { area in
+                        selectionRect = area
+                        model.select(in: area.offsetBy(dx: -rect.minX, dy: -rect.minY))
+                    },
+                    ended: { selectionRect = nil; selectionBeforeMarquee = nil },
+                    cancelled: {
+                        if let previous = selectionBeforeMarquee { model.setSelection(previous) }
+                        selectionRect = nil; selectionBeforeMarquee = nil
+                    })
             }
             .coordinateSpace(name: "table")
             .onContinuousHover { phase in
@@ -669,7 +764,7 @@ private struct SlideView: View {
         _preview = State(initialValue: model.preparedPreviews[slide.url])
     }
 
-    private var selected: Bool { model.selectedID == slide.id }
+    private var selected: Bool { model.selectedIDs.contains(slide.id) }
     private var resting: SlidePlacement {
         TableCoordinates.placement(slide, boardWidth: model.worldSize.width, boardHeight: model.worldSize.height,
                                    imageAspect: aspect, zoom: model.displayZoom)
@@ -711,9 +806,9 @@ private struct SlideView: View {
             }
         }
         .frame(width: width, height: width / aspect)
-        .overlay(Rectangle().stroke(selected ? Color.white.opacity(0.75) : Color.clear, lineWidth: selected ? 1 : 0.5))
+        .overlay(Rectangle().stroke(selected ? Color.accentColor : Color.clear, lineWidth: selected ? 2 : 0.5))
         .overlay(alignment: .bottomTrailing) {
-            if selected && !model.loupeEnabled {
+            if selected && model.selectedIDs.count == 1 && !model.loupeEnabled {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.system(size: 10)).padding(4).background(.white, in: Circle()).foregroundStyle(.black)
                     .offset(x: 7, y: 7)
@@ -728,7 +823,7 @@ private struct SlideView: View {
         }
         .shadow(color: .black.opacity(model.isLit ? 0.22 : 0.36), radius: 2, x: 1, y: 2)
         .rotationEffect(.degrees(displayed.angle))
-        .onTapGesture { model.select(slide.id) }
+        .onTapGesture { model.select(slide.id, extending: !model.loupeEnabled && NSEvent.modifierFlags.contains(.command)) }
         .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named("table"))
             .updating($isDragging) { _, state, _ in state = true }
             .updating($movement) { value, state, _ in state = value.translation }
@@ -736,7 +831,7 @@ private struct SlideView: View {
                 if dragStartPan == nil { dragStartPan = model.pan }
                 dragPointer = value.location
                 draggingID = slide.id
-                if !selected { model.select(slide.id) }
+                if !selected || model.selectedIDs.count > 1 { model.select(slide.id) }
                 setDragCursor(active: true)
                 NSCursor.closedHand.set()
             }
@@ -774,7 +869,9 @@ private struct SlideView: View {
         .simultaneousGesture(RotationGesture().updating($rotation) { value, state, _ in state = value }
             .onEnded { value in commit { $0.angle += value.degrees } })
         .contextMenu {
-            Button("移出台面") { model.select(slide.id); model.removeSelected() }
+            Button(selected && model.selectedIDs.count > 1 ? "移出所选 \(model.selectedIDs.count) 项" : "移出台面") {
+                if !selected { model.select(slide.id) }; model.removeSelected()
+            }
             Button("摆正") { model.update(slide.id) { $0.angle = 0 } }
             Divider()
             Button("逆时针旋转 15°") { model.update(slide.id) { $0.angle -= 15 } }
@@ -783,6 +880,7 @@ private struct SlideView: View {
             Button("放大胶片") { model.update(slide.id) { $0.width *= 1.12 } }
         }
         .accessibilityLabel(slide.url.lastPathComponent)
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .onAppear { if preview == nil { model.beginLightPreparation(slide.id) } }
         .task(id: slide.url) {
             if preview == nil { model.beginLightPreparation(slide.id) }

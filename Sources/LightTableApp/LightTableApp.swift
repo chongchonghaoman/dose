@@ -17,6 +17,7 @@ struct LightTableApp: App {
         .defaultSize(width: 1180, height: 900)
         .windowStyle(.hiddenTitleBar)
         .commands {
+            FeatureGuideCommands()
             CommandGroup(after: .appInfo) {
                 Button("检查更新…", action: updater.checkForUpdates)
                     .disabled(!updater.canCheckForUpdates)
@@ -27,21 +28,22 @@ struct LightTableApp: App {
             }
             CommandGroup(replacing: .newItem) {
                 Button("选择照片文件夹…", action: model.chooseFolder).keyboardShortcut("o")
-                    .disabled(model.slideshowMode)
+                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button("添加照片…", action: model.choosePhotos).keyboardShortcut("o", modifiers: [.command, .shift])
-                    .disabled(model.slideshowMode)
+                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
             }
             CommandMenu("观片") {
                 Button(model.isLit ? "关灯" : "开灯") { model.isLit.toggle() }.keyboardShortcut("l", modifiers: .command)
-                    .disabled(model.slideshowMode)
+                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button("普通指针") { model.loupeEnabled = false }.keyboardShortcut("a", modifiers: [])
-                    .disabled(model.slideshowMode)
+                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button("放大镜") { model.loupeEnabled = true }.keyboardShortcut("v", modifiers: [])
-                    .disabled(model.slideshowMode)
+                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button("整理全局", action: model.fitToWindow).keyboardShortcut("0")
-                    .disabled(model.slideshowMode)
-                Button("移出台面", action: model.removeSelected).keyboardShortcut(.delete, modifiers: [])
-                    .disabled(model.slideshowMode || model.selectedID == nil)
+                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                Button(model.selectedIDs.count > 1 ? "移出所选 \(model.selectedIDs.count) 项" : "移出台面", action: model.removeSelected)
+                    .keyboardShortcut(.delete, modifiers: [])
+                    .disabled(model.slideshowMode || model.albumEditorPresented || model.selectedIDs.isEmpty || FeatureGuideState.shared.welcomeVisible)
             }
         }
     }

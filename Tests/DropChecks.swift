@@ -231,6 +231,83 @@ struct DropChecks {
         try check(navigation.pan == .zero && navigation.zoom == 1 && navigation.layout.slides[0].width == Slide.defaultWidth &&
                   navigation.layout.slides[0].x > 0 && navigation.layout.slides[0].x < 1,
                   "command zero arranges distant photos at default size and returns to the global view")
+        let batchStorage = root.appendingPathComponent("batch-layout.json")
+        let batch = TableModel(restore: false, storageURL: batchStorage)
+        batch.boardSize = CGSize(width: 1000, height: 700)
+        let batchB = try file("batch/two.png", image), batchC = try file("batch/three.png", image)
+        for (index, url) in [original, batchB, batchC].enumerated() {
+            batch.cacheThumbnail(thumbnail, for: url)
+            batch.place(url, x: 0.2 + Double(index) * 0.7, y: 0.5)
+        }
+        let batchIDs = batch.layout.slides.map(\.id)
+        let batchPhotos = batch.photos
+        batch.isLit = true
+        let batchClock = batch.lightStartedAt
+        batch.select(batchIDs[0]); batch.select(batchIDs[1], extending: true)
+        try check(batch.selectedIDs == Set(batchIDs.prefix(2)), "command-click adds another photograph without clearing selection")
+        batch.select(batchIDs[0], extending: true)
+        try check(batch.selectedIDs == [batchIDs[1]], "command-click toggles an already-selected photograph off")
+        batch.select(batchIDs[1], extending: true)
+        try check(batch.selectedIDs.isEmpty && batch.selectedID == nil, "toggling the last selected item clears the primary selection")
+        let invalidID = UUID()
+        batch.setSelection([batchIDs[0], batchIDs[1], invalidID])
+        try check(batch.selectedIDs == Set(batchIDs.prefix(2)), "selection rejects stale or foreign identifiers")
+        batch.select(batchIDs[2])
+        try check(batch.selectedIDs == [batchIDs[2]], "plain selection replaces a previous multi-selection")
+        batch.selectedID = nil
+        try check(batch.selectedIDs.isEmpty, "legacy clear-selection action clears the complete set")
+        let untouchedLayout = batch.layout
+        batch.removeSelected()
+        try check(batch.layout == untouchedLayout, "empty selection never removes a photograph")
+        batch.zoom = 0.65; batch.pan = CGPoint(x: -60, y: 85)
+        batch.update(batchIDs[0]) { $0.angle = 45 }
+        let first = batch.layout.slides.first { $0.id == batchIDs[0] }!
+        let firstPlacement = batch.screenPlacement(first, aspect: 1)
+        batch.select(in: CGRect(x: firstPlacement.x - 2, y: firstPlacement.y - 2, width: 4, height: 4))
+        try check(batch.selectedIDs == [batchIDs[0]], "marquee selects a rotated photograph after pan and camera zoom")
+        let extent = (firstPlacement.width + firstPlacement.height) / (2 * sqrt(2.0))
+        batch.select(in: CGRect(x: firstPlacement.x + extent - 4, y: firstPlacement.y + extent - 4, width: 2, height: 2))
+        try check(batch.selectedIDs.isEmpty, "empty corners of a rotated bounding box are not mistaken for image pixels")
+        let second = batch.layout.slides.first { $0.id == batchIDs[1] }!
+        let secondPlacement = batch.screenPlacement(second, aspect: 1)
+        let area = CGRect(x: firstPlacement.x - extent - 2, y: firstPlacement.y - extent - 2,
+                          width: secondPlacement.x + secondPlacement.width / 2 - firstPlacement.x + extent + 4,
+                          height: extent * 2 + 4)
+        batch.select(in: area)
+        try check(batch.selectedIDs == Set(batchIDs.prefix(2)), "marquee selects all intersecting photos and excludes a distant photo")
+        batch.select(in: CGRect(x: area.maxX, y: area.maxY, width: -area.width, height: -area.height))
+        try check(batch.selectedIDs == Set(batchIDs.prefix(2)), "reverse-direction marquee uses the same selection area")
+        batch.select(in: .zero)
+        try check(batch.selectedIDs.isEmpty, "zero-size marquee clears the previous selection safely")
+        let batchAlbum = batch.newAlbum()
+        batch.updateAlbum(batchAlbum) { page in
+            let pocket = page.add(.film135)!
+            page.setPhoto(original, in: pocket)
+        }
+        batch.placeAlbum(batchAlbum, at: CGPoint(x: 800, y: 400))
+        let albumPockets = batch.albums[0].pockets
+        batch.select(in: batch.albumFrame(batch.albums[0]))
+        try check(batch.selectedIDs.contains(batchAlbum), "marquee treats an album page as a table item")
+        batch.setSelection([batchIDs[0], batchIDs[1], batchAlbum])
+        batch.removeSelected()
+        try check(batch.layout.slides.map(\.id) == [batchIDs[2]], "batch removal keeps the unselected photograph in place")
+        try check(batch.onTableAlbums.isEmpty && batch.albums[0].pockets == albumPockets,
+                  "batch removal returns the entire album to the tray without deleting pockets")
+        try check(batch.photos == batchPhotos && batch.isLit && batch.lightStartedAt == batchClock,
+                  "batch removal preserves the library and lamp state")
+        try check(batch.selectedIDs.isEmpty && !batch.tableIDs.contains(batchAlbum) &&
+                  !batch.tableOrder.contains(batchIDs[0]), "batch removal clears selection and obsolete stacking references")
+        batch.flushSave()
+        let batchRestored = TableModel(storageURL: batchStorage)
+        try check(batchRestored.layout == batch.layout && batchRestored.albums == batch.albums && batchRestored.photos == batchPhotos,
+                  "batch removal persists while all library and album contents survive relaunch")
+        try check(batchRestored.selectedIDs.isEmpty, "selection remains transient across relaunch")
+        batch.select(batchIDs[2]); batch.removeSelected()
+        try check(batch.layout.slides.isEmpty && batch.fitScale == 1 && batch.photos == batchPhotos,
+                  "removing the final photograph resets layout scale but keeps the tray")
+        for url in [original, batchB, batchC] {
+            try check(Data(contentsOf: url) == image, "batch removal never deletes or changes source \(url.lastPathComponent)")
+        }
         print("\(checks) drop checks passed.")
     }
 }

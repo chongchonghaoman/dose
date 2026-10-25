@@ -121,11 +121,11 @@ struct AlbumTableView: View {
     var body: some View {
         let frame = model.albumFrame(page)
         AlbumArtwork(page: page, model: model, transmission: transmission, flare: flare, backlit: true)
-            .overlay(Rectangle().stroke(model.selectedID == page.id ? .white.opacity(0.65) : .clear, lineWidth: 1))
+            .overlay(Rectangle().stroke(model.selectedIDs.contains(page.id) ? Color.accentColor : .clear, lineWidth: 2))
             .scaleEffect(model.zoom)
             .frame(width: frame.width, height: frame.height)
             .contentShape(Rectangle())
-            .onTapGesture { model.select(page.id) }
+            .onTapGesture { model.select(page.id, extending: !model.loupeEnabled && NSEvent.modifierFlags.contains(.command)) }
             .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named("table"))
                 .updating($dragging) { _, active, _ in active = true }
                 .onChanged { value in
@@ -157,10 +157,14 @@ struct AlbumTableView: View {
             .onDisappear { endDrag() }
             .contextMenu {
                 Button("编辑相册页") { model.editingAlbumID = page.id; model.albumEditorPresented = true }
-                Button("整页收回相册") { model.select(page.id); model.removeSelected() }
+                Button(model.selectedIDs.contains(page.id) && model.selectedIDs.count > 1
+                    ? "移出所选 \(model.selectedIDs.count) 项" : "整页收回相册") {
+                    if !model.selectedIDs.contains(page.id) { model.select(page.id) }; model.removeSelected()
+                }
             }
             .position(x: frame.midX, y: frame.midY)
             .accessibilityLabel(page.name + "，\(page.photoCount) 张，整页移动")
+            .accessibilityAddTraits(model.selectedIDs.contains(page.id) ? .isSelected : [])
     }
     private func endDrag() {
         dragOrigin = nil; startPan = nil; pointer = nil

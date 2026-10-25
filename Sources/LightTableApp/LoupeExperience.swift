@@ -17,6 +17,7 @@ enum LoupeGeometry {
     static let magnification: CGFloat = 1.5
     static let enterDuration = 0.50
     static let exitDuration = 0.34
+    static let focalChangeDuration = 0.26
 
     static func ease(_ progress: CGFloat) -> CGFloat {
         let t = progress.isFinite ? min(1, max(0, progress)) : 0
@@ -51,9 +52,9 @@ enum LoupeGeometry {
         let ordinary = LoupeRenderer.sourceViewport(point: point, diameter: diameter, magnification: magnification)
         guard closeViewing else { return ordinary }
         let close = LoupeRenderer.sourceViewport(point: point, diameter: closeDiameter(in: size),
-                                                 magnification: mode.magnification(in: size))
-        // Include both ends of the approach, even on a display where the
-        // original window-adaptive magnification is greater than 8×.
+                                                 magnification: LoupeCloseMagnification.eight.magnification(in: size))
+        // Both endpoints remain available during focal changes. The original
+        // mode shares the ordinary field, even when its scale exceeds 8×.
         return ordinary.union(close)
     }
 }
@@ -157,13 +158,15 @@ struct LoupeOverlay: View {
             if let scene = experience.scene {
                 let origin = CGPoint(x: canvasFrame.minX + scene.point.x, y: canvasFrame.minY + scene.point.y)
                 LoupeApproach(scene: scene, origin: origin, size: proxy.size,
-                              mode: experience.closeMagnification,
+                              magnificationBlend: experience.closeMagnification == .eight ? 1 : 0,
                               closeViewing: experience.anchor != nil, displayScale: displayScale,
                               progress: experience.isClose ? 1 : 0)
                     // LoupeDepth owns each layer's timing. A linear clock avoids
                     // applying a second easing curve to the shared approach.
                     .animation(reduceMotion ? nil : .linear(duration: experience.isClose
                         ? LoupeGeometry.enterDuration : LoupeGeometry.exitDuration), value: experience.isClose)
+                    .animation(reduceMotion || experience.anchor == nil ? nil
+                        : .easeInOut(duration: LoupeGeometry.focalChangeDuration), value: experience.closeMagnification)
             }
             Color.clear.onChange(of: proxy.size, initial: true) { _, size in experience.viewingSize = size }
         }
@@ -214,14 +217,25 @@ struct LoupeSampling {
     let contentScale: CGFloat
 
     init(in size: CGSize, closeViewing: Bool, mode: LoupeCloseMagnification, progress: CGFloat) {
-        depth = LoupeDepth(progress: progress,
-            finalScale: LoupeGeometry.closeDiameter(in: size) / LoupeGeometry.diameter,
-            finalFilmScale: mode == .eight ? 8 / LoupeGeometry.magnification : nil)
+        self.init(in: size, closeViewing: closeViewing,
+                  magnificationBlend: mode == .eight ? 1 : 0, progress: progress)
+    }
+
+    init(in size: CGSize, closeViewing: Bool, magnificationBlend: CGFloat, progress: CGFloat) {
+        let blend = magnificationBlend.isFinite ? min(1, max(0, magnificationBlend)) : 0
+        let aperture = LoupeGeometry.closeDiameter(in: size) / LoupeGeometry.diameter
+        let eight = 8 / LoupeGeometry.magnification
+        // Equal progress changes the field by equal proportions. Keep the
+        // optical centre fixed and preserve both existing endpoint render paths.
+        let film = blend == 0 ? aperture : (blend == 1 ? eight : aperture * pow(eight / aperture, blend))
+        depth = LoupeDepth(progress: progress, finalScale: aperture, finalFilmScale: film)
         // Retain resolution through return; mouse movement at rest stays 260pt.
         diameter = LoupeGeometry.rasterDiameter(in: size, closeViewing: closeViewing)
         let relativeScale = depth.scale / depth.apertureScale
-        magnification = LoupeGeometry.magnification(for: diameter) * (mode == .eight ? relativeScale : 1)
-        contentScale = mode == .eight ? 1 : relativeScale
+        let originalDepth = LoupeDepth(progress: progress, finalScale: aperture)
+        let originalRelativeScale = originalDepth.scale / originalDepth.apertureScale
+        contentScale = blend == 0 ? originalRelativeScale : (blend == 1 ? 1 : 1 + (originalRelativeScale - 1) * (1 - blend))
+        magnification = LoupeGeometry.magnification(for: diameter) * (relativeScale / contentScale)
     }
 
     func input(scene: LoupeSceneInput, displayScale: CGFloat) -> LoupeDisplayInput {
@@ -250,19 +264,19 @@ struct LoupeApproach: View, Animatable {
     let scene: LoupeSceneInput
     let origin: CGPoint
     let size: CGSize
-    let mode: LoupeCloseMagnification
+    var magnificationBlend: CGFloat
     let closeViewing: Bool
     let displayScale: CGFloat
     var progress: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var animatableData: CGFloat {
-        get { progress }
-        set { progress = newValue }
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(progress, magnificationBlend) }
+        set { progress = newValue.first; magnificationBlend = newValue.second }
     }
 
     var body: some View {
         let target = LoupeGeometry.closeCenter(from: origin, in: size)
-        let sampling = LoupeSampling(in: size, closeViewing: closeViewing, mode: mode, progress: progress)
+        let sampling = LoupeSampling(in: size, closeViewing: closeViewing, magnificationBlend: magnificationBlend, progress: progress)
         let depth = sampling.depth
         let front = CGPoint(x: origin.x + (target.x - origin.x) * depth.apertureTravel,
                             y: origin.y + (target.y - origin.y) * depth.apertureTravel)

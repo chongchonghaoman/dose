@@ -14,11 +14,13 @@ A local macOS light table and slide projector for viewing photographs, with opti
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-当前版本 **[v0.1.70](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.70)** 已加入正式App图标，恢复幻灯换片声，支持应用内更新、大放大镜「原倍率 / 8×」滑块和Tab切换。
+当前版本 **[v0.1.71](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.71)** 新增台面批量移除、大镜连续变焦，以及更新后新功能指引。
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.70/LightTable-v0.1.70-macOS-arm64.zip)**
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.71/LightTable-v0.1.71-macOS-arm64.zip)**
 
 从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
+
+**v0.1.71** 普通指针支持多选，凑近观察支持连续变焦。普通指针下用⌘点选或Shift框选，Delete移出台面；底栏和原图保留。按住空格后按Tab切换倍率时平滑推近／拉远。详见[更新说明](docs/releases/v0.1.71.md)。
 
 ## 应用内更新
 
@@ -27,6 +29,10 @@ A local macOS light table and slide projector for viewing photographs, with opti
 - 菜单栏「观片台 → 检查更新…」可随时手动检查；「自动检查更新」可关闭后台检查。持续运行时每24小时再检查一次。
 - 下载或网络错误可重试，不修改现有应用；更新包由GitHub Releases提供。
 - v0.1.70起提供签名更新源。发行维护说明见 [发布步骤](docs/RELEASING.md)。
+
+## 新功能指引
+
+首次打开v0.1.71时显示本次更新卡片；可直接开始观片，或选择「看看怎么用」。三步提示可跳过，同版本只自动展示一次。菜单「帮助 → 本次更新…」可以重看，指引不会自动改变照片或台面布局。
 
 ## 功能
 
@@ -60,7 +66,8 @@ A local macOS light table and slide projector for viewing photographs, with opti
 | Tab | 放大镜模式下切换原倍率 / 8× |
 | 按住空格 | 凑近观察；松开退回 |
 | ⌘0 | 整理台面并回到全局 |
-| Delete | 将选中照片移出台面 |
+| ⌘点选 / Shift拖动 | 多选 / 框选台面照片 |
+| Delete | 将选中照片批量移出台面 |
 | ↓ / →、↑ / ← | 幻灯模式下下一张、上一张 |
 | Esc | 退出幻灯模式 |
 
@@ -101,6 +108,7 @@ bash scripts/check-albums.sh
 bash scripts/check-optics.sh
 bash scripts/check-slideshow.sh
 bash scripts/check-updates.sh
+bash scripts/check-feature-guide.sh
 ```
 
 它们覆盖布局、拖放、灯光、镜片、相册与幻灯状态等逻辑。图形相关检查需要能够使用 macOS 图形框架的环境；检查通过不等于所有设备上的动画流畅度已经实测。

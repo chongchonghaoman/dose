@@ -167,6 +167,47 @@ private actor RasterGate {
             check(unchangedOriginal, "original mode retains the existing fixed sampling and layer animation at \(Int(window.width))pt")
         }
 
+        for window in [CGSize(width: 840, height: 640), CGSize(width: 1180, height: 900), CGSize(width: 4000, height: 3000)] {
+            let native = LoupeCloseMagnification.original.magnification(in: window)
+            let originalField = LoupeGeometry.sourceViewport(point: point, in: window, closeViewing: true, mode: .original)
+            let eightField = LoupeGeometry.sourceViewport(point: point, in: window, closeViewing: true, mode: .eight)
+            check(originalField == eightField, "changing focal target retains both endpoint scenes at \(Int(window.width))pt")
+            var focalScale = true, boundedRaster = true, fieldCoverage = true, coveredClip = true
+            for step in 0...100 {
+                let blend = CGFloat(step) / 100
+                let sample = LoupeSampling(in: window, closeViewing: true, magnificationBlend: blend, progress: 1)
+                let expected = native * pow(8 / native, blend)
+                focalScale = focalScale && abs(sample.magnification - expected) < 1e-8
+                boundedRaster = boundedRaster && sample.diameter == LoupeGeometry.closeDiameter(in: window)
+                    && sample.depth.apertureScale == LoupeGeometry.closeDiameter(in: window) / 260
+                let field = LoupeRenderer.sourceViewport(point: point, diameter: sample.diameter, magnification: sample.magnification)
+                fieldCoverage = fieldCoverage && originalField.insetBy(dx: -0.001, dy: -0.001).contains(field)
+                for progress: CGFloat in [0, 0.2, 0.5, 0.8, 1] {
+                    let moving = LoupeSampling(in: window, closeViewing: true, magnificationBlend: blend, progress: progress)
+                    coveredClip = coveredClip && moving.contentScale >= 1 && moving.magnification.isFinite
+                    let shownDiameter = 260 * moving.depth.apertureScale
+                    let shownMagnification = moving.magnification * moving.contentScale * shownDiameter / moving.diameter
+                    let movingField = LoupeRenderer.sourceViewport(point: point, diameter: shownDiameter, magnification: shownMagnification)
+                    fieldCoverage = fieldCoverage && originalField.insetBy(dx: -0.001, dy: -0.001).contains(movingField)
+                }
+            }
+            check(focalScale, "focal transition follows continuous proportional magnification in both directions at \(Int(window.width))pt")
+            check(boundedRaster, "focal switching keeps the aperture and drawable size fixed at \(Int(window.width))pt")
+            check(fieldCoverage, "scene culling covers switching during approach and return at \(Int(window.width))pt")
+            check(coveredClip, "focal switching never shrinks the source below the lens clip at \(Int(window.width))pt")
+        }
+        let blendScene = LoupeSceneInput(photos: [], point: point, panelBounds: nil, transmission: 1, flare: 0, brightness: 1)
+        var approach = LoupeApproach(scene: blendScene, origin: point, size: board, magnificationBlend: 1,
+                                     closeViewing: true, displayScale: 2, progress: 1)
+        approach.animatableData = AnimatablePair(0.7, 0.38)
+        check(approach.progress == 0.7 && approach.magnificationBlend == 0.38 && approach.scene.point == point,
+              "approach and focal ratio are independent animatable values with a fixed sampling point")
+        approach.animatableData = AnimatablePair(0.7, 0.35)
+        check(approach.magnificationBlend == 0.35 && approach.progress == 0.7,
+              "a focal reversal can continue from an intermediate displayed value without resetting approach")
+        let invalidBlend = LoupeSampling(in: board, closeViewing: true, magnificationBlend: .nan, progress: 1)
+        check(invalidBlend.magnification.isFinite && invalidBlend.contentScale.isFinite, "invalid focal ratio falls back to the original finite sampling")
+
         let slide = Slide(url: URL(fileURLWithPath: "/in-memory.png"), x: 0.5, y: 0.5, width: 0.3)
         let baseline = SlidePresentation.placement(slide, board: board, aspect: 1.5, zoom: 1)
         let enlarged = SlidePresentation.placement(slide, board: board, aspect: 1.5, zoom: 1, magnification: 1.8)
@@ -611,6 +652,54 @@ private actor RasterGate {
               "leaving loupe mode clears Tab capture and restores normal navigation")
         monitor.stop()
         check(cancellations > 1, "view teardown cancels input state and removes monitor")
+
+        window.setContentSize(CGSize(width: 500, height: 400))
+        let selectionMonitor = CanvasSelection.MonitorView(frame: CGRect(x: 0, y: 0, width: 500, height: 400))
+        window.contentView = selectionMonitor
+        selectionMonitor.enabled = true
+        var selectionStarts = 0, selectionEnds = 0, selectionCancels = 0
+        var lastMarquee: CGRect?
+        selectionMonitor.began = { selectionStarts += 1 }
+        selectionMonitor.changed = { lastMarquee = $0 }
+        selectionMonitor.ended = { selectionEnds += 1 }
+        selectionMonitor.cancelled = { selectionCancels += 1 }
+        func mouse(_ type: NSEvent.EventType, _ point: CGPoint, modifiers: NSEvent.ModifierFlags = .shift, number: Int? = nil) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: selectionMonitor.convert(point, to: nil),
+                modifierFlags: modifiers, timestamp: 0, windowNumber: number ?? window.windowNumber,
+                context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+        }
+        check(selectionMonitor.handle(mouse(.leftMouseDown, CGPoint(x: 100, y: 100), modifiers: [])) != nil,
+              "ordinary mouse drags pass through to photo movement and board panning")
+        check(selectionMonitor.handle(mouse(.leftMouseDown, CGPoint(x: 100, y: 100), modifiers: .command)) != nil,
+              "command-click remains available for multi-selection")
+        check(selectionMonitor.handle(mouse(.leftMouseDown, CGPoint(x: 100, y: 35))) != nil,
+              "Shift input on the toolbar is not captured as a marquee")
+        check(selectionMonitor.handle(mouse(.leftMouseDown, CGPoint(x: 100, y: 100), number: 0)) != nil,
+              "mouse input from another window never starts a marquee")
+        selectionMonitor.excludedRect = CGRect(x: 280, y: 240, width: 100, height: 80)
+        check(selectionMonitor.handle(mouse(.leftMouseDown, CGPoint(x: 300, y: 260))) != nil && selectionStarts == 0,
+              "guide card does not start a marquee underneath")
+        selectionMonitor.excludedRect = nil
+        check(selectionMonitor.handle(mouse(.leftMouseDown, CGPoint(x: 300, y: 260))) == nil && selectionStarts == 1,
+              "Shift press starts a captured marquee before photo drag gestures")
+        check(selectionMonitor.handle(mouse(.leftMouseDragged, CGPoint(x: 100, y: 90), modifiers: [])) == nil &&
+              lastMarquee == CGRect(x: 100, y: 90, width: 200, height: 170),
+              "reverse dragging keeps the captured selection even if Shift is released")
+        check(selectionMonitor.handle(mouse(.leftMouseUp, CGPoint(x: 600, y: 0), modifiers: [])) == nil && selectionEnds == 1 &&
+              lastMarquee == CGRect(x: 300, y: 64, width: 200, height: 196),
+              "marquee clamps to the board and completes without leaking a mouse-up")
+        _ = selectionMonitor.handle(mouse(.leftMouseDown, CGPoint(x: 120, y: 150)))
+        check(selectionMonitor.handle(key(.keyDown, code: 53)) == nil && selectionCancels == 1,
+              "Escape cancels a marquee so the previous selection can be restored")
+        check(selectionMonitor.handle(mouse(.leftMouseUp, CGPoint(x: 150, y: 170))) == nil && selectionEnds == 1,
+              "cancelled marquee consumes its release without committing selection")
+        _ = selectionMonitor.handle(mouse(.leftMouseDown, CGPoint(x: 120, y: 150)))
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        check(selectionCancels == 2, "focus loss cancels selection and balances the crosshair cursor")
+        selectionMonitor.enabled = false
+        check(selectionMonitor.handle(mouse(.leftMouseDown, CGPoint(x: 120, y: 150))) != nil,
+              "disabled marquee leaves loupe and slideshow interactions unchanged")
+        selectionMonitor.stop()
         print("RESULT \(count) passed; 0 failed")
     }
 }

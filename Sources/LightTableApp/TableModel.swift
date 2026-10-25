@@ -13,7 +13,12 @@ final class TableModel {
     var tableOrder: [UUID] = []
     var albumEditorPresented = false
     var editingAlbumID: UUID?
-    var selectedID: UUID?
+    private(set) var selectedIDs: Set<UUID> = []
+    // Compatibility for existing single-item actions. Selection is transient.
+    var selectedID: UUID? {
+        get { tableIDs.last { selectedIDs.contains($0) } }
+        set { setSelection(newValue.map { [$0] } ?? []) }
+    }
     // One clock for the panel, slides and loupe; placing a photo never restarts it.
     private(set) var lightStartedAt: TimeInterval?
     @ObservationIgnored private var preparingLightSurfaces = Set<UUID>()
@@ -174,8 +179,18 @@ final class TableModel {
         save()
     }
 
-    func select(_ id: UUID) {
-        selectedID = id
+    func setSelection(_ ids: Set<UUID>) {
+        let valid = ids.intersection(tableIDs)
+        if valid != selectedIDs { selectedIDs = valid }
+    }
+
+    func select(_ id: UUID, extending: Bool = false) {
+        guard tableIDs.contains(id) else { return }
+        if extending, selectedIDs.contains(id) {
+            selectedIDs.remove(id)
+            return
+        }
+        if extending { selectedIDs.insert(id) } else { selectedIDs = [id] }
         synchronizeOrder()
         layout.bringToFront(id)
         tableOrder.removeAll { $0 == id }; tableOrder.append(id)
@@ -183,14 +198,41 @@ final class TableModel {
     }
     func update(_ id: UUID, change: (inout Slide) -> Void) { layout.update(id, change); save() }
     func removeSelected() {
-        guard let selectedID else { return }
-        if albums.contains(where: { $0.id == selectedID }) {
-            updateAlbum(selectedID) { $0.position = nil }
-            tableOrder.removeAll { $0 == selectedID }; self.selectedID = nil; save(); return
-        }
-        layout.remove(selectedID); self.selectedID = nil
+        let ids = selectedIDs.intersection(tableIDs)
+        guard !ids.isEmpty else { return }
+        for id in ids { layout.remove(id) }
+        for index in albums.indices where ids.contains(albums[index].id) { albums[index].position = nil }
+        tableOrder.removeAll { ids.contains($0) }
+        selectedIDs.removeAll()
         if layout.slides.isEmpty { fitScale = 1 }
         save()
+    }
+
+    /// Rect is in board screen coordinates, after the camera transform.
+    func select(in rect: CGRect) {
+        let area = rect.standardized
+        guard !area.isEmpty, !area.isInfinite, !area.isNull else { setSelection([]); return }
+        var ids = Set<UUID>()
+        for slide in layout.slides {
+            let aspect = imageAspects[slide.url] ?? 1.5
+            let placement = screenPlacement(slide, aspect: aspect)
+            if Self.intersects(area, placement: placement) { ids.insert(slide.id) }
+        }
+        for page in onTableAlbums where albumFrame(page).intersects(area) { ids.insert(page.id) }
+        setSelection(ids)
+    }
+
+    private static func intersects(_ rect: CGRect, placement p: SlidePlacement) -> Bool {
+        let angle = p.angle * .pi / 180
+        let c = cos(angle), s = sin(angle)
+        let dx = rect.midX - p.x, dy = rect.midY - p.y
+        let rw = rect.width / 2, rh = rect.height / 2
+        let pw = p.width / 2, ph = p.height / 2
+        // Separate on the marquee axes and on the rotated photograph axes.
+        return abs(dx) <= rw + pw * abs(c) + ph * abs(s)
+            && abs(dy) <= rh + pw * abs(s) + ph * abs(c)
+            && abs(dx * c + dy * s) <= pw + rw * abs(c) + rh * abs(s)
+            && abs(-dx * s + dy * c) <= ph + rw * abs(s) + rh * abs(c)
     }
     func clear() {
         layout.clear(); selectedID = nil; fitScale = 1; zoom = 1; pan = .zero
@@ -321,7 +363,7 @@ final class TableModel {
     }
     func deleteAlbum(_ id: UUID) {
         albums.removeAll { $0.id == id }; tableOrder.removeAll { $0 == id }
-        if selectedID == id { selectedID = nil }
+        selectedIDs.remove(id)
         if editingAlbumID == id { editingAlbumID = albums.first?.id }
         save()
     }
