@@ -9,7 +9,9 @@ struct LightTableApp: App {
             ContentView(model: model)
                 .frame(minWidth: 840, minHeight: 640)
                 .preferredColorScheme(.light)
-                .task { updater.start(beforeRelaunch: model.flushSave) }
+                .task(id: model.isPreparingStartup) {
+                    if !model.isPreparingStartup { updater.start(beforeRelaunch: model.flushSave) }
+                }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.flushSave() }
                 .onDisappear { model.flushSave() }
                 .onOpenURL { url in Task { await model.importURLs([url]) } }
@@ -21,29 +23,30 @@ struct LightTableApp: App {
             CommandGroup(after: .appInfo) {
                 Button("检查更新…", action: updater.checkForUpdates)
                     .disabled(!updater.canCheckForUpdates)
-                Toggle("自动检查更新", isOn: Binding(get: { updater.automaticChecks },
+                Toggle("运行期间自动检查更新", isOn: Binding(get: { updater.automaticChecks },
                                                     set: updater.setAutomaticChecks))
                     .disabled(!updater.isAvailable)
+                    .help("每次启动始终检查一次；此开关控制持续运行时每 24 小时的检查。")
                 Divider()
             }
             CommandGroup(replacing: .newItem) {
                 Button("选择照片文件夹…", action: model.chooseFolder).keyboardShortcut("o")
-                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button("添加照片…", action: model.choosePhotos).keyboardShortcut("o", modifiers: [.command, .shift])
-                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
             }
             CommandMenu("观片") {
                 Button(model.isLit ? "关灯" : "开灯") { model.isLit.toggle() }.keyboardShortcut("l", modifiers: .command)
-                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button("普通指针") { model.loupeEnabled = false }.keyboardShortcut("a", modifiers: [])
-                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button("放大镜") { model.loupeEnabled = true }.keyboardShortcut("v", modifiers: [])
-                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
-                Button("整理全局", action: model.fitToWindow).keyboardShortcut("0")
-                    .disabled(model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                Button("整理全局", action: model.fitToWindow).keyboardShortcut("z", modifiers: .shift)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button(model.selectedIDs.count > 1 ? "移出所选 \(model.selectedIDs.count) 项" : "移出台面", action: model.removeSelected)
                     .keyboardShortcut(.delete, modifiers: [])
-                    .disabled(model.slideshowMode || model.albumEditorPresented || model.selectedIDs.isEmpty || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || model.albumEditorPresented || model.selectedIDs.isEmpty || FeatureGuideState.shared.welcomeVisible)
             }
         }
     }

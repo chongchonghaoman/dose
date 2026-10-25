@@ -16,7 +16,7 @@ struct AlbumArtwork: View {
                 if let url = pocket.url {
                     let aspect = model.imageAspects[url] ?? 1.5
                     let rect = AlbumPage.imageRect(pocket, aspect: aspect)
-                    AlbumFilm(url: url, model: model, transmission: transmission, flare: flare,
+                    AlbumFilm(url: url, lightSurfaceID: pocket.id, model: model, transmission: transmission, flare: flare,
                               backlit: backlit, catalog: catalog)
                         .frame(width: rect.width, height: rect.height)
                         .position(x: rect.midX, y: rect.midY)
@@ -35,6 +35,8 @@ struct AlbumArtwork: View {
 
 private struct AlbumFilm: View {
     let url: URL
+    let lightSurfaceID: UUID
+    @Environment(\.displayScale) private var displayScale
     let model: TableModel
     let transmission: Double
     let flare: Double
@@ -43,9 +45,13 @@ private struct AlbumFilm: View {
     @State private var preview: PhotoPreview?
     @State private var thumbnail: CGImage?
     @State private var failed = false
-    @State private var lightSurfaceID = UUID()
+    @State private var previewURL: URL?
     var body: some View {
         GeometryReader { proxy in
+            let zoom = backlit && !catalog ? model.zoom : 1
+            let size = CGSize(width: proxy.size.width * zoom, height: proxy.size.height * zoom)
+            let request = TablePreviewRequest(url: url,
+                maxPixel: TablePreviewSizing.maxPixel(size: size, displayScale: displayScale))
             Group {
                 if let preview, !catalog {
                     TransmittedPhoto(preview: preview.viewing(transmitted: model.transmissionEnabled), size: proxy.size, transmission: transmission,
@@ -58,26 +64,33 @@ private struct AlbumFilm: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else { Color(white: 0.035) }
             }.frame(width: proxy.size.width, height: proxy.size.height)
+            .task(id: TableModel.SurfaceRequest(preview: request, attempt: model.startupAttempt)) {
+                if previewURL != url {
+                    preview = nil; thumbnail = model.thumbnails[url]; failed = false; previewURL = url
+                }
+                if backlit && !catalog && preview == nil { model.beginLightPreparation(lightSurfaceID) }
+                defer {
+                    if backlit && !catalog && !Task.isCancelled { model.finishLightPreparation(lightSurfaceID) }
+                }
+                if preview != nil {
+                    do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
+                }
+                thumbnail = thumbnail ?? PhotoThumbnailCache.cached(url)
+                if thumbnail == nil { thumbnail = await PhotoThumbnails.shared.thumbnail(url) }
+                guard !Task.isCancelled else { return }
+                if let thumbnail { model.cacheThumbnail(thumbnail, for: url) }
+                if backlit && !catalog {
+                    let loaded = await model.prepareTablePreview(request.url, maxPixel: request.maxPixel)
+                    guard !Task.isCancelled else { return }
+                    if let loaded { preview = loaded }
+                }
+                failed = thumbnail == nil && preview == nil
+            }
         }
         .onAppear {
             if backlit && !catalog && preview == nil { model.beginLightPreparation(lightSurfaceID) }
         }
-        .onDisappear { model.finishLightPreparation(lightSurfaceID) }
-        .task(id: url) {
-            if backlit && !catalog { model.beginLightPreparation(lightSurfaceID) }
-            defer { model.finishLightPreparation(lightSurfaceID) }
-            preview = nil; thumbnail = model.thumbnails[url]; failed = false
-            thumbnail = thumbnail ?? PhotoThumbnailCache.cached(url)
-            if thumbnail == nil { thumbnail = await PhotoThumbnails.shared.thumbnail(url) }
-            guard !Task.isCancelled else { return }
-            if let thumbnail { model.cacheThumbnail(thumbnail, for: url) }
-            if backlit && !catalog {
-                let loaded = await PhotoStore.shared.preview(url, maxPixel: 640)
-                guard !Task.isCancelled else { return }
-                preview = loaded
-            }
-            failed = thumbnail == nil
-        }
+        .onDisappear { if backlit && !catalog { model.finishLightPreparation(lightSurfaceID) } }
         .accessibilityLabel(url.lastPathComponent)
     }
 }
@@ -121,7 +134,7 @@ struct AlbumTableView: View {
     var body: some View {
         let frame = model.albumFrame(page)
         AlbumArtwork(page: page, model: model, transmission: transmission, flare: flare, backlit: true)
-            .overlay(Rectangle().stroke(model.selectedIDs.contains(page.id) ? Color.accentColor : .clear, lineWidth: 2))
+            .overlay(Rectangle().stroke(model.showsSelection && model.selectedIDs.contains(page.id) ? Color.accentColor : .clear, lineWidth: 2))
             .scaleEffect(model.zoom)
             .frame(width: frame.width, height: frame.height)
             .contentShape(Rectangle())
@@ -129,7 +142,7 @@ struct AlbumTableView: View {
             .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named("table"))
                 .updating($dragging) { _, active, _ in active = true }
                 .onChanged { value in
-                    if dragOrigin == nil { dragOrigin = page.position; startPan = model.pan; model.select(page.id) }
+                    if dragOrigin == nil { dragOrigin = page.position; startPan = model.pan; model.select(page.id, showIndicator: false) }
                     draggingID = page.id; pointer = value.location
                     if !cursor { NSCursor.closedHand.push(); cursor = true }
                     NSCursor.closedHand.set()

@@ -12,6 +12,7 @@ private enum TableStyle {
 
 struct ContentView: View {
     @Bindable var model: TableModel
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var flight: SleeveFlight?
     @State private var canvasFrame = CGRect.zero
@@ -39,7 +40,7 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     ZStack(alignment: .topTrailing) {
                         TableCanvas(model: model, loupe: loupe, liftedPhoto: flight?.photo.url,
-                                    guideBlocked: featureGuide.isWelcome(in: guideWindowID),
+                                    guideBlocked: model.isPreparingStartup || featureGuide.isWelcome(in: guideWindowID),
                                     guideExclusion: guideStep == nil ? nil : guideBounds.offsetBy(dx: -canvasFrame.minX, dy: -canvasFrame.minY))
                             .background(GeometryReader { proxy in
                                 Color.clear.preference(key: WorkbenchFrameKey.self, value: proxy.frame(in: .named("workbench")))
@@ -76,7 +77,7 @@ struct ContentView: View {
         }
         .overlay(alignment: .topLeading) {
             if let flight {
-                SleeveFlightView(flight: flight, preview: model.preparedPreviews[flight.photo.url]?.viewing(transmitted: model.transmissionEnabled),
+                SleeveFlightView(flight: flight, preview: model.preparedTablePreviews[flight.photo.url]?.viewing(transmitted: model.transmissionEnabled),
                                  isLit: model.isLit, brightness: model.lampBrightness, reduceMotion: reduceMotion)
                 FilmSleeveSurface().frame(width: flight.sleeve.width, height: flight.sleeve.height)
                     .position(x: flight.sleeve.midX, y: flight.sleeve.midY)
@@ -84,7 +85,7 @@ struct ContentView: View {
             }
         }
         .overlay {
-            if !model.slideshowMode { LoupeOverlay(experience: loupe, canvasFrame: canvasFrame) }
+            if !model.slideshowMode && !model.isPreparingStartup { LoupeOverlay(experience: loupe, canvasFrame: canvasFrame) }
         }
         .overlayPreferenceValue(FeatureGuideAnchors.self) { anchors in
             if let step = guideStep, !model.slideshowMode && !model.albumEditorPresented {
@@ -117,7 +118,7 @@ struct ContentView: View {
                 .onAppear { featureGuide.didPresent(in: guideWindowID) }
         }
         .background {
-            LoupeKeyboard(enabled: !model.slideshowMode && model.loupeEnabled && flight == nil && !model.albumEditorPresented && !featureGuide.welcomeVisible,
+            LoupeKeyboard(enabled: !model.isPreparingStartup && !model.slideshowMode && model.loupeEnabled && flight == nil && !model.albumEditorPresented && !featureGuide.welcomeVisible,
                           pressed: { loupe.press() },
                           released: { loupe.release(reduceMotion: reduceMotion) },
                           cancelled: { loupe.cancel() },
@@ -167,11 +168,21 @@ struct ContentView: View {
         .alert("观片台", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("好") { model.message = nil }
         } message: { Text(model.message ?? "") }
+        .disabled(model.isPreparingStartup)
+        .allowsHitTesting(!model.isPreparingStartup)
+        .accessibilityHidden(model.isPreparingStartup)
+        .overlay {
+            if model.isPreparingStartup {
+                StartupPreparationView(model: model).transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.isPreparingStartup)
+        .task { await model.prepareStartup() }
     }
 
     private var guideStep: Int? { featureGuide.step(in: guideWindowID) }
     private var guideMenuAvailable: Bool {
-        featureGuide.available && !model.slideshowMode && !model.albumEditorPresented && model.message == nil && flight == nil
+        featureGuide.available && !model.isPreparingStartup && !model.slideshowMode && !model.albumEditorPresented && model.message == nil && flight == nil
     }
     private var guideReady: Bool { guideWindowReady && guideMenuAvailable && featureGuide.phase == .idle }
 
@@ -192,9 +203,10 @@ struct ContentView: View {
             HStack(spacing: 2) {
                 tool("minus", "缩小台面视野") { model.zoomCanvas(by: 1 / 1.2) }
                 Button("整理全局", action: model.fitToWindow).buttonStyle(.plain).font(.system(size: 11)).padding(.horizontal, 5)
-                    .help("恢复默认尺寸、整理全部胶片并显示全局（⌘0）")
+                    .help("恢复默认尺寸、整理全部胶片并显示全局（⇧Z）")
                 tool("plus", "放大台面视野") { model.zoomCanvas(by: 1.2) }
             }.padding(4).background(TableStyle.chrome, in: Capsule())
+                .featureGuideTarget(.overview)
             HStack(spacing: 7) {
                 Image(systemName: "sun.max").font(.system(size: 12))
                 BrightnessSlider(value: $model.lampBrightness, range: 0.1...1.6,
@@ -370,7 +382,8 @@ struct ContentView: View {
             let origin = CGRect(x: sleeve.minX + 7, y: sleeve.minY + 9, width: 90, height: 56)
             flight = SleeveFlight(photo: photo, thumbnail: image, sleeve: sleeve, origin: origin,
                                   start: value.startLocation, frame: origin)
-            Task { _ = await model.preparePreview(photo.url) }
+            let pixels = model.tablePreviewMaxPixel(for: photo.url, displayScale: displayScale)
+            Task { _ = await model.prepareTablePreview(photo.url, maxPixel: pixels) }
             NSCursor.closedHand.push(); flightCursor = true
         }
         guard var current = flight, current.phase == .dragging, current.photo.url == photo.url else { return }
@@ -431,6 +444,7 @@ struct ContentView: View {
 
 private struct TrayPhoto: View {
     let photo: Photo
+    @Environment(\.displayScale) private var displayScale
     @Bindable var model: TableModel
     var lifted: Bool
     var onPull: (Photo, CGImage, CGRect, DragGesture.Value) -> Void
@@ -474,7 +488,8 @@ private struct TrayPhoto: View {
         .onHover { hovered = $0 }
         .task(id: hovered) {
             guard hovered else { return }
-            _ = await model.preparePreview(photo.url)
+            _ = await model.prepareTablePreview(photo.url,
+                maxPixel: model.tablePreviewMaxPixel(for: photo.url, displayScale: displayScale))
         }
     }
 }
@@ -546,7 +561,7 @@ struct TableCanvas: View {
                     VStack(spacing: 12) {
                         Image(systemName: "rectangle.on.rectangle.angled").font(.system(size: 26, weight: .ultraLight))
                         Text("把喜欢的照片，放到光里").font(.system(size: 13))
-                        Text("从下方拖入 · 拖动空白处移台 · ⌘0 整理全局").font(.system(size: 10))
+                        Text("从下方拖入 · 拖动空白处移台 · ⇧Z 整理全局").font(.system(size: 10))
                     }
                     .foregroundStyle(Color.black.opacity(0.40))
                     .position(x: rect.midX, y: rect.midY).allowsHitTesting(false)
@@ -655,7 +670,7 @@ struct TableCanvas: View {
         }
         for id in model.tableIDs {
             if let slide = model.layout.slides.first(where: { $0.id == id }) {
-                let preview = (model.preparedPreviews[slide.url] ?? lensPreviews[slide.url])?.viewing(transmitted: model.transmissionEnabled)
+                let preview = (model.preparedPreviews[slide.url] ?? lensPreviews[slide.url] ?? model.preparedTablePreviews[slide.url])?.viewing(transmitted: model.transmissionEnabled)
                 let aspect = preview.map { Double($0.aspect) } ?? model.imageAspects[slide.url] ?? 1.5
                 let p = livePlacements[slide.id] ?? model.screenPlacement(slide, aspect: aspect)
                 append(LoupeScenePhoto(preview: preview, thumbnail: model.thumbnails[slide.url],
@@ -673,7 +688,7 @@ struct TableCanvas: View {
                 surface(false)
                 for pocket in page.pockets {
                     guard let url = pocket.url else { continue }
-                    let preview = (model.preparedPreviews[url] ?? lensPreviews[url])?.viewing(transmitted: model.transmissionEnabled)
+                    let preview = (model.preparedPreviews[url] ?? lensPreviews[url] ?? model.preparedTablePreviews[url])?.viewing(transmitted: model.transmissionEnabled)
                     let aspect = preview.map { Double($0.aspect) } ?? model.imageAspects[url] ?? 1.5
                     let rect = AlbumPage.imageRect(pocket, aspect: aspect)
                     append(LoupeScenePhoto(preview: preview, thumbnail: model.thumbnails[url],
@@ -741,6 +756,7 @@ struct LampPanel: View {
 
 private struct SlideView: View {
     @Bindable var model: TableModel
+    @Environment(\.displayScale) private var displayScale
     let slide: Slide
     let boardSize: CGSize
     let transmission: Double
@@ -761,10 +777,11 @@ private struct SlideView: View {
         self.model = model; self.slide = slide; self.boardSize = boardSize
         self.transmission = transmission; self.flare = flare
         _draggingID = draggingID
-        _preview = State(initialValue: model.preparedPreviews[slide.url])
+        _preview = State(initialValue: model.preparedTablePreviews[slide.url])
     }
 
     private var selected: Bool { model.selectedIDs.contains(slide.id) }
+    private var showsSelection: Bool { selected && model.showsSelection }
     private var resting: SlidePlacement {
         TableCoordinates.placement(slide, boardWidth: model.worldSize.width, boardHeight: model.worldSize.height,
                                    imageAspect: aspect, zoom: model.displayZoom)
@@ -785,6 +802,8 @@ private struct SlideView: View {
 
     var body: some View {
         let imageSize = CGSize(width: width, height: width / aspect)
+        let request = TablePreviewRequest(url: slide.url,
+            maxPixel: TablePreviewSizing.maxPixel(size: imageSize, displayScale: displayScale))
         ZStack {
             Color(white: 0.025)
             if let preview {
@@ -806,9 +825,12 @@ private struct SlideView: View {
             }
         }
         .frame(width: width, height: width / aspect)
-        .overlay(Rectangle().stroke(selected ? Color.accentColor : Color.clear, lineWidth: selected ? 2 : 0.5))
+        .background {
+            FilmContactSurface(size: imageSize, zoom: model.zoom).equatable()
+        }
+        .overlay(Rectangle().stroke(showsSelection ? Color.accentColor : Color.clear, lineWidth: 2))
         .overlay(alignment: .bottomTrailing) {
-            if selected && model.selectedIDs.count == 1 && !model.loupeEnabled {
+            if showsSelection && model.selectedIDs.count == 1 {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.system(size: 10)).padding(4).background(.white, in: Circle()).foregroundStyle(.black)
                     .offset(x: 7, y: 7)
@@ -821,17 +843,18 @@ private struct SlideView: View {
                     }.onEnded { _ in resizeStart = nil })
             }
         }
-        .shadow(color: .black.opacity(model.isLit ? 0.22 : 0.36), radius: 2, x: 1, y: 2)
         .rotationEffect(.degrees(displayed.angle))
         .onTapGesture { model.select(slide.id, extending: !model.loupeEnabled && NSEvent.modifierFlags.contains(.command)) }
         .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named("table"))
             .updating($isDragging) { _, state, _ in state = true }
             .updating($movement) { value, state, _ in state = value.translation }
             .onChanged { value in
-                if dragStartPan == nil { dragStartPan = model.pan }
+                if dragStartPan == nil {
+                    dragStartPan = model.pan
+                    model.select(slide.id, showIndicator: false)
+                }
                 dragPointer = value.location
                 draggingID = slide.id
-                if !selected || model.selectedIDs.count > 1 { model.select(slide.id) }
                 setDragCursor(active: true)
                 NSCursor.closedHand.set()
             }
@@ -882,19 +905,27 @@ private struct SlideView: View {
         .accessibilityLabel(slide.url.lastPathComponent)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .onAppear { if preview == nil { model.beginLightPreparation(slide.id) } }
-        .task(id: slide.url) {
+        .task(id: TableModel.SurfaceRequest(preview: request, attempt: model.startupAttempt)) {
             if preview == nil { model.beginLightPreparation(slide.id) }
+            // A replaced size task leaves readiness to its successor; onDisappear
+            // releases the surface if it is removed while preparation is pending.
+            defer { if !Task.isCancelled { model.finishLightPreparation(slide.id) } }
+            if preview != nil {
+                // Keep drawing the existing image while a continuous resize settles.
+                do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
+            }
             if model.thumbnails[slide.url] == nil,
                let thumbnail = await PhotoThumbnails.shared.thumbnail(slide.url) {
                 model.cacheThumbnail(thumbnail, for: slide.url)
             }
-            let loaded = await model.preparePreview(slide.url)
-            guard !Task.isCancelled else { model.finishLightPreparation(slide.id); return }
+            guard !Task.isCancelled else { return }
+            let loaded = await model.prepareTablePreview(request.url, maxPixel: request.maxPixel)
+            guard !Task.isCancelled else { return }
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                preview = loaded; failed = loaded == nil
-                model.finishLightPreparation(slide.id)
+                if let loaded { preview = loaded; failed = false }
+                else if preview == nil { failed = true }
             }
         }
         .preference(key: SlidePresentationKey.self,

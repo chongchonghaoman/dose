@@ -5,7 +5,7 @@ import Observation
 @MainActor @Observable
 final class FeatureGuideState {
     static let shared = FeatureGuideState()
-    static let releaseVersion = "0.1.71"
+    static let releaseVersion = "0.1.72"
     static let seenKey = "featureGuide.presentedVersions"
 
     enum Phase: Equatable {

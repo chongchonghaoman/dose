@@ -8,6 +8,6 @@ CHECKS_DIR="$PACKAGE_ROOT/.build/update-checks"
 mkdir -p "$CHECKS_DIR"
 xcrun swiftc -swift-version 5 -parse-as-library \
     -F "$FRAMEWORKS" -framework Sparkle -Xlinker -rpath -Xlinker "$FRAMEWORKS" \
-    Sources/LightTableApp/UpdateConfiguration.swift Tests/UpdateChecks.swift \
+    Sources/LightTableApp/UpdateConfiguration.swift Sources/LightTableApp/AppUpdater.swift Tests/UpdateChecks.swift \
     -o "$CHECKS_DIR/UpdateChecks"
 "$CHECKS_DIR/UpdateChecks" Configuration/Updates.plist

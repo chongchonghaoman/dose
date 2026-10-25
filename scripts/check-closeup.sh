@@ -7,6 +7,7 @@ xcrun swiftc -swift-version 5 -parse-as-library -module-name LightTableCore -emi
   "$PACKAGE_ROOT/Sources/LightTableCore/TableLayout.swift" \
   "$PACKAGE_ROOT/Sources/LightTableCore/AlbumPage.swift" \
   "$PACKAGE_ROOT/Sources/LightTableCore/LightResponse.swift" \
+  "$PACKAGE_ROOT/Sources/LightTableCore/StartupPresentationProgress.swift" \
   -emit-module-path "$CHECKS_DIR/LightTableCore.swiftmodule" -o "$CHECKS_DIR/libLightTableCore.dylib"
 sources=()
 for source in "$PACKAGE_ROOT"/Sources/LightTableApp/*.swift; do

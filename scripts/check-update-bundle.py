@@ -6,6 +6,7 @@ Uses Sparkle's own verifier. No downloading, installing, signing or publishing.
 import base64
 import hashlib
 import plistlib
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -30,6 +31,10 @@ def validate(app, feed=None):
     require(info.get("CFBundleIdentifier") == "local.ourlighttable.desktop", "application identity")
     require(info.get("CFBundleVersion") == info.get("CFBundleShortVersionString") == version,
             "application version matches VERSION")
+    guide_source = (ROOT / "Sources/LightTableApp/FeatureGuideState.swift").read_text()
+    guide_version = re.search(r'static let releaseVersion = "([^"]+)"', guide_source)
+    require(guide_version is not None and guide_version.group(1) == version,
+            "release includes its own first-launch update guide")
     require(all(info.get(key) == value for key, value in config.items()), "public updater configuration")
     require(len(base64.b64decode(info["SUPublicEDKey"], validate=True)) == 32, "Ed25519 public key")
     binary = app / "Contents/MacOS/LightTable"

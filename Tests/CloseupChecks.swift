@@ -38,6 +38,24 @@ private actor RasterGate {
         func check(_ condition: Bool, _ message: String) {
             precondition(condition, message); count += 1; print("PASS \(message)")
         }
+        let contact = FilmContactTexture.image!
+        check((0..<100).allSatisfy { _ in FilmContactTexture.image === contact },
+              "all loose photos reuse one contact texture without per-photo allocation")
+        check(contact.width == 96 && contact.height == 96 && contact.bytesPerRow * contact.height == 36 * 1024,
+              "contact texture pixel storage stays at 36 KiB regardless of photo count or resolution")
+        let contactData = contact.dataProvider!.data!
+        let contactBytes = CFDataGetBytePtr(contactData)!
+        var clearPhoto = true, clearOuterEdge = true, visibleSide = false
+        for y in 0..<contact.height {
+            for x in 0..<contact.width {
+                let alpha = contactBytes[y * contact.bytesPerRow + x * 4 + 3]
+                if (12..<84).contains(x) && (12..<84).contains(y) { clearPhoto = clearPhoto && alpha == 0 }
+                if x == 0 || y == 0 || x == 95 || y == 95 { clearOuterEdge = clearOuterEdge && alpha == 0 }
+                if x == 84 && y == 48 { visibleSide = alpha > 0 }
+            }
+        }
+        check(clearPhoto, "film contact decoration never covers or crops photo pixels")
+        check(clearOuterEdge && visibleSide, "thin side is visible and contact shadow fades before texture boundary")
         let point = CGPoint(x: 400, y: 300)
         let board = CGSize(width: 1000, height: 700)
         let original = LoupeRenderer.sourceViewport(point: point, diameter: LoupeGeometry.diameter,

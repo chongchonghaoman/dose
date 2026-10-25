@@ -1,5 +1,6 @@
 import AppKit
 import UniformTypeIdentifiers
+import ImageIO
 import LightTableCore
 
 @main
@@ -26,6 +27,148 @@ struct DropChecks {
         }
         let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
         let original = try file("originals/one.png", image)
+        try check(TablePreviewSizing.maxPixel(size: CGSize(width: 110, height: 74), displayScale: 2) == 256,
+                  "small Retina table photos request 256 pixels instead of 2200")
+        try check(TablePreviewSizing.maxPixel(size: CGSize(width: 110, height: 170), displayScale: 2) == 384,
+                  "portrait previews use their displayed long edge")
+        try check(TablePreviewSizing.maxPixel(size: CGSize(width: 200, height: 130), displayScale: 1) == 256 &&
+                  TablePreviewSizing.maxPixel(size: CGSize(width: 200, height: 130), displayScale: 2) == 512,
+                  "moving to a Retina display requests sufficient image pixels")
+        try check(TablePreviewSizing.maxPixel(size: CGSize(width: 250, height: 160), displayScale: 2) == 512 &&
+                  TablePreviewSizing.maxPixel(size: CGSize(width: 251, height: 160), displayScale: 2) == 512,
+                  "minor size changes reuse the same preview bucket")
+        try check(TablePreviewSizing.maxPixel(size: CGSize(width: 257, height: 170), displayScale: 2) == 768 &&
+                  TablePreviewSizing.maxPixel(size: CGSize(width: 2000, height: 1500), displayScale: 2) == 2200,
+                  "zooming upgrades preview size up to the existing full-resolution limit")
+        try check(TablePreviewSizing.maxPixel(size: .zero, displayScale: 2) == 256 &&
+                  TablePreviewSizing.maxPixel(size: CGSize(width: CGFloat.nan, height: 100), displayScale: 2) == 256 &&
+                  TablePreviewSizing.maxPixel(size: CGSize(width: 200, height: 100), displayScale: .infinity) == 256,
+                  "transient invalid geometry cannot generate unbounded requests")
+
+        let previewFixture = root.appendingPathComponent("sizing.png")
+        let pixels = CGContext(data: nil, width: 2400, height: 1600, bitsPerComponent: 8,
+            bytesPerRow: 2400 * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        pixels.setFillColor(CGColor(gray: 0.45, alpha: 1))
+        pixels.fill(CGRect(x: 0, y: 0, width: 2400, height: 1600))
+        let output = CGImageDestinationCreateWithURL(previewFixture as CFURL, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(output, pixels.makeImage()!, nil)
+        try check(CGImageDestinationFinalize(output), "create a full-size fixture for preview separation checks")
+        let originalFixture = try Data(contentsOf: previewFixture)
+        let sizingModel = TableModel(restore: false)
+        let small = await sizingModel.prepareTablePreview(previewFixture, maxPixel: 256)
+        let repeatedSmall = await sizingModel.prepareTablePreview(previewFixture, maxPixel: 256)
+        try check(small?.source.width == 256 && small?.source === repeatedSmall?.source,
+                  "table loading decodes its requested size and reuses it")
+        try check(small.map { [$0.source, $0.dark, $0.lit, $0.flare, $0.boosted].allSatisfy { max($0.width, $0.height) <= 256 } } == true,
+                  "all five table optical layers stay within the requested pixel budget")
+        try check(sizingModel.preparedPreviews[previewFixture] == nil,
+                  "loading table previews does not prepare or impersonate full-resolution loupe previews")
+        let large = await sizingModel.prepareTablePreview(previewFixture, maxPixel: 768)
+        let reduced = await sizingModel.prepareTablePreview(previewFixture, maxPixel: 256)
+        try check(large?.source.width == 768 && reduced?.source === large?.source,
+                  "zoom upgrades the table and shrinking reuses its existing sharper image")
+        let full = await sizingModel.preparePreview(previewFixture)
+        try check(full?.source.width == 2200 && sizingModel.preparedTablePreviews[previewFixture]?.source === large?.source,
+                  "loupe still gets 2200 pixels without replacing the table-sized image")
+        let concurrent = TableModel(restore: false)
+        async let a = concurrent.prepareTablePreview(previewFixture, maxPixel: 384)
+        async let b = concurrent.prepareTablePreview(previewFixture, maxPixel: 384)
+        let pair = await (a, b)
+        try check(pair.0 != nil && pair.0?.source === pair.1?.source,
+                  "concurrent consumers of one URL and size share their preview")
+        try check(try Data(contentsOf: previewFixture) == originalFixture,
+                  "display-sized rendering never rewrites the original image")
+
+        let startupStorage = root.appendingPathComponent("startup-layout.json")
+        let startupWriter = TableModel(restore: false, storageURL: startupStorage)
+        let startupAlbumPhoto = try file("startup/album.png", image)
+        let startupTrayPhoto = try file("startup/tray-only.png", image)
+        let startupOffTablePhoto = try file("startup/off-table-album.png", image)
+        startupWriter.place(previewFixture, x: 0.3, y: 0.4)
+        let looseSurface = startupWriter.layout.slides[0].id
+        let startupAlbumID = startupWriter.newAlbum()
+        startupWriter.updateAlbum(startupAlbumID) { page in
+            let same = page.add(.film135)!
+            page.setPhoto(previewFixture, in: same)
+            let other = page.add(.film135)!
+            page.setPhoto(startupAlbumPhoto, in: other)
+        }
+        startupWriter.placeAlbum(startupAlbumID)
+        let offTableAlbumID = startupWriter.newAlbum()
+        startupWriter.updateAlbum(offTableAlbumID) { page in
+            let pocket = page.add(.film135)!
+            page.setPhoto(startupOffTablePhoto, in: pocket)
+        }
+        await startupWriter.importURLs([startupTrayPhoto])
+        startupWriter.flushSave()
+        let savedStartupBytes = try Data(contentsOf: startupStorage)
+        let startup = TableModel(storageURL: startupStorage)
+        try check(startup.isPreparingStartup && startup.startupTotal == 2 && startup.startupCompleted == 0,
+                  "restart prepares unique photos from loose films and on-table albums only")
+        let albumSurfaces = startup.onTableAlbums.flatMap { $0.pockets.map(\.id) }
+        startup.beginLightPreparation(looseSurface)
+        for id in albumSurfaces { startup.beginLightPreparation(id) }
+        async let firstPreparation: Void = startup.prepareStartup()
+        async let repeatedPreparation: Void = startup.prepareStartup()
+        _ = await (firstPreparation, repeatedPreparation)
+        try check(startup.startupCompleted == 2 && startup.startupFailedURLs.isEmpty && startup.startupPhase == .finishing,
+                  "duplicate startup consumers share one job and cannot finish before display surfaces")
+        try check(startup.preparedPreviews[previewFixture]?.source.width == 2200 &&
+                  startup.preparedPreviews[startupAlbumPhoto] != nil,
+                  "restored loose and album photos have sharp loupe previews before entering")
+        try check(startup.preparedPreviews[startupTrayPhoto] == nil && startup.preparedPreviews[startupOffTablePhoto] == nil,
+                  "startup does not decode tray-only or off-table album photos at full resolution")
+        startup.finishLightPreparation(looseSurface)
+        try check(startup.isPreparingStartup, "startup still waits for restored album display surfaces")
+        for id in albumSurfaces { startup.finishLightPreparation(id) }
+        try check(!startup.isPreparingStartup, "last prepared surface releases the startup screen")
+        startup.isLit = true
+        try check(startup.lightStartedAt != nil, "lamp responds immediately after startup readiness")
+        let startupFull = startup.preparedPreviews[previewFixture]
+        await startup.prepareStartup()
+        try check(startup.startupCompleted == 2 && !startup.isPreparingStartup &&
+                  startup.preparedPreviews[previewFixture]?.source === startupFull?.source,
+                  "reappearing windows do not restart preparation or replace the sharp cached image")
+        try check(try Data(contentsOf: startupStorage) == savedStartupBytes &&
+                  Data(contentsOf: previewFixture) == originalFixture,
+                  "startup leaves saved arrangement and original photo bytes untouched")
+
+        let brokenPhoto = try file("startup/broken.png", Data("not an image".utf8))
+        let brokenStorage = root.appendingPathComponent("startup-failure.json")
+        let brokenWriter = TableModel(restore: false, storageURL: brokenStorage)
+        brokenWriter.place(brokenPhoto, x: 0.2, y: 0.3)
+        brokenWriter.flushSave()
+        let failedStartup = TableModel(storageURL: brokenStorage)
+        let brokenSurface = failedStartup.layout.slides[0].id
+        failedStartup.finishLightPreparation(brokenSurface)
+        await failedStartup.prepareStartup()
+        try check(failedStartup.startupPhase == .needsAttention && failedStartup.startupCompleted == 0 &&
+                  failedStartup.startupFailedURLs == [brokenPhoto],
+                  "unreadable photos show an explicit retry state instead of fake completion")
+        let failedSkip = TableModel(storageURL: brokenStorage)
+        failedSkip.finishLightPreparation(brokenSurface)
+        await failedSkip.prepareStartup()
+        failedSkip.continueStartup()
+        try check(!failedSkip.isPreparingStartup && failedSkip.layout.slides.count == 1,
+                  "explicit continue enters without deleting an unreadable photo or its layout")
+        try image.write(to: brokenPhoto)
+        await failedStartup.retryStartup()
+        try check(failedStartup.startupCompleted == 1 && failedStartup.startupFailedURLs.isEmpty &&
+                  failedStartup.startupAttempt == 1 && failedStartup.startupPhase == .finishing,
+                  "retry refreshes surface tasks and waits for their replacement images")
+        failedStartup.finishLightPreparation(brokenSurface)
+        try check(!failedStartup.isPreparingStartup && failedStartup.preparedPreviews[brokenPhoto] != nil,
+                  "recovering a source file makes the sharp image available before entry")
+
+        let trayStorage = root.appendingPathComponent("startup-empty.json")
+        let trayWriter = TableModel(restore: false, storageURL: trayStorage)
+        await trayWriter.importURLs([startupTrayPhoto])
+        trayWriter.flushSave()
+        let emptyStartup = TableModel(storageURL: trayStorage)
+        await emptyStartup.prepareStartup()
+        try check(!emptyStartup.isPreparingStartup && emptyStartup.startupTotal == 0 && emptyStartup.preparedPreviews.isEmpty,
+                  "a restored empty table opens immediately even when the tray has photos")
         let model = TableModel(restore: false)
         await model.importURLs([original])
         let thumbnail = await PhotoStore.shared.thumbnail(original)!
@@ -230,7 +373,7 @@ struct DropChecks {
         navigation.fitToWindow()
         try check(navigation.pan == .zero && navigation.zoom == 1 && navigation.layout.slides[0].width == Slide.defaultWidth &&
                   navigation.layout.slides[0].x > 0 && navigation.layout.slides[0].x < 1,
-                  "command zero arranges distant photos at default size and returns to the global view")
+                  "fit-to-window arranges distant photos at default size and returns to the global view")
         let batchStorage = root.appendingPathComponent("batch-layout.json")
         let batch = TableModel(restore: false, storageURL: batchStorage)
         batch.boardSize = CGSize(width: 1000, height: 700)
@@ -243,8 +386,24 @@ struct DropChecks {
         let batchPhotos = batch.photos
         batch.isLit = true
         let batchClock = batch.lightStartedAt
+        batch.loupeEnabled = false
+        batch.select(batchIDs[0], showIndicator: false)
+        try check(batch.selectedIDs == [batchIDs[0]] && batch.tableIDs.last == batchIDs[0] && !batch.showsSelection,
+                  "ordinary dragging raises the photo and retains its Delete target without a blue border")
+        batch.update(batchIDs[0]) { $0.angle = 10 }
+        try check(!batch.showsSelection, "committing a dragged photo does not flash selection chrome back on")
+        batch.select(batchIDs[0])
+        try check(batch.showsSelection, "clicking the same photo after dragging restores explicit selection feedback")
+        batch.loupeEnabled = true
+        try check(!batch.showsSelection && batch.selectedIDs == [batchIDs[0]],
+                  "loupe viewing hides selection chrome without losing the active photo")
+        batch.loupeEnabled = false
+        batch.select(batchIDs[0], showIndicator: false)
+        batch.setSelection([batchIDs[0]])
+        try check(batch.showsSelection, "marquee selection reveals the same photo even when its ID set is unchanged")
         batch.select(batchIDs[0]); batch.select(batchIDs[1], extending: true)
         try check(batch.selectedIDs == Set(batchIDs.prefix(2)), "command-click adds another photograph without clearing selection")
+        try check(batch.showsSelection, "command multi-selection keeps its visible selection feedback")
         batch.select(batchIDs[0], extending: true)
         try check(batch.selectedIDs == [batchIDs[1]], "command-click toggles an already-selected photograph off")
         batch.select(batchIDs[1], extending: true)

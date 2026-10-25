@@ -36,16 +36,18 @@ struct FeatureGuideWelcome: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("观片台已更新").font(.system(size: 21, weight: .semibold))
-                    Text("v\(version) · 两个让观片更顺手的变化")
+                    Text("v\(version) · 准备更从容，胶片更有质感")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }.padding(.bottom, 24)
-            feature("rectangle.dashed", title: "多张照片，一起移出台面",
-                    text: "⌘ 点选多张，或 Shift 拖动框选，\n再按 Delete 一起移出。",
-                    note: "底栏照片和磁盘原图都会保留。")
+            feature("square.stack.3d.up", title: "胶片有厚度，拖动更干净",
+                    text: "无边框照片增加薄侧沿与贴台阴影，\n普通拖动不再闪出蓝色选择框。")
             Divider().padding(.vertical, 19)
-            feature("viewfinder.circle", title: "凑近看，倍率切换更顺滑",
-                    text: "放大镜下按住空格，再按 Tab，\n在原倍率与 8× 之间平滑推近、拉远。")
+            feature("viewfinder.circle", title: "准备好，再凑近看",
+                    text: "重启先恢复台面与高清预览，\n准备完成即可开灯、用放大镜观察。")
+            Divider().padding(.vertical, 19)
+            feature("arrow.up.left.and.arrow.down.right", title: "Shift + Z，回到全局",
+                    text: "整理全局快捷键改为 ⇧Z，\n恢复默认尺寸并重新整理台面。")
             HStack(spacing: 10) {
                 Spacer()
                 Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle())
@@ -91,7 +93,7 @@ struct FeatureGuideButtonStyle: ButtonStyle {
     }
 }
 
-enum FeatureGuideTarget: Hashable { case tools, magnification, removal }
+enum FeatureGuideTarget: Hashable { case tools, magnification, removal, overview }
 struct FeatureGuideAnchors: PreferenceKey {
     static var defaultValue: [FeatureGuideTarget: Anchor<CGRect>] = [:]
     static func reduce(value: inout [FeatureGuideTarget: Anchor<CGRect>], nextValue: () -> [FeatureGuideTarget: Anchor<CGRect>]) {
@@ -121,22 +123,21 @@ struct FeatureGuideTour: View {
     @State private var cardHeight: CGFloat = 230
 
     private var target: FeatureGuideTarget {
-        step == 1 ? .removal : (step == 2 && loupeEnabled ? .magnification : .tools)
+        step == 1 ? .overview : (step == 2 && loupeEnabled ? .magnification : .tools)
     }
     private var title: String {
-        ["选中想整理的照片", "一次移出，底栏还在", "凑近后，顺滑切换倍率"][step]
+        ["拖动胶片，不闪蓝框", "Shift + Z，整理全局", "准备完成，凑近即看"][step]
     }
     private var details: String {
         switch step {
-        case 0: return "普通指针下，按住 ⌘ 点击多张，\n或按住 Shift 拖动框选。\n点击空白处或按 Esc 取消选择。"
-        case 1: return "按 Delete，或点击「移出台面」。\n只整理台面，底栏照片和原图都保留。"
-        default: return "选择放大镜，按住空格凑近，\n再按 Tab 切换原倍率／8×。\n也可以点击或拖动右侧的倍率滑块。"
+        case 0: return "普通指针下直接拖动胶片，\n不再显示蓝框和缩放手柄。\n主动点击、⌘多选和 Shift 框选仍有提示。"
+        case 1: return "按 Shift + Z，或点击「整理全局」。\n恢复默认尺寸、整理全部胶片并显示全局。"
+        default: return "重启准备好高清预览后，选择放大镜，\n按住空格凑近；Tab 切换原倍率／8×。\n台面按显示大小加载，放大镜另用高清预览。"
         }
     }
     private var context: String? {
         if !hasPhotos { return "台面还没有照片，可从底栏拖入后再试。" }
-        if step < 2 && loupeEnabled { return "先点击上方的普通指针。" }
-        if step == 1 && selectedCount < 2 { return "选中多项后，台面左下角会显示移出按钮。" }
+        if step == 0 && loupeEnabled { return "先点击上方的普通指针。" }
         return nil
     }
 
@@ -144,9 +145,8 @@ struct FeatureGuideTour: View {
         GeometryReader { proxy in
             let rect = anchors[target].map { proxy[$0] }
             let width = min(310.0, max(240, proxy.size.width - 32))
-            let bottom = boardFrame.isEmpty ? proxy.size.height - 140 : boardFrame.maxY
-            let proposedX = step == 1 ? (rect?.minX ?? 16) + width / 2 : (rect?.maxX ?? proxy.size.width - 24) - width / 2
-            let proposedY = step == 1 ? (rect?.minY ?? bottom - 16) - cardHeight / 2 - 12 : (rect?.maxY ?? 52) + cardHeight / 2 + 14
+            let proposedX = (rect?.maxX ?? proxy.size.width - 24) - width / 2
+            let proposedY = (rect?.maxY ?? 52) + cardHeight / 2 + 14
             let x = min(proxy.size.width - width / 2 - 16, max(width / 2 + 16, proposedX))
             let y = min(proxy.size.height - cardHeight / 2 - 16, max(cardHeight / 2 + 16, proposedY))
             if let rect {

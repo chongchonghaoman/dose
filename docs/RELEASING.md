@@ -1,7 +1,7 @@
 # GitHub 应用内更新发布
 
-公开版在每次启动后后台检查一次，之后保持 Sparkle 每24小时的检查周期。
-用户关闭「自动检查更新」后，不再后台检查，仍可用「检查更新…」。
+公开版在每次完整启动、台面准备结束后独立检查一次；曾跳过的版本也重新提示。
+「运行期间自动检查更新」只控制 Sparkle 每24小时的检查周期，关闭后仍保留启动检查和手动「检查更新…」。
 默认只提示；下载、安装并重启由用户点击执行。重启前保存布局。
 无更新时后台保持安静，断网时后台不弹错误；手动检查由 Sparkle 显示结果和错误，可重试。
 
@@ -18,7 +18,7 @@ v0.1.65 内没有更新组件，现有用户必须手动安装带更新功能的
 ## 准备版本（只在本机执行）
 
 1. 递增 `VERSION`，完成代码与文档，确认音频的作者和来源说明正确。
-2. 更新 `docs/releases/v版本号.md`，执行 `bash scripts/check-updates.sh` 和相关功能检查。
+2. 更新 `docs/releases/v版本号.md`，同时更新 `FeatureGuideState.releaseVersion` 和本版功能卡、操作提示内容。每次升级后首次打开都必须有对应说明，不能沿用旧版新增功能文案；打包检查会拒绝缺少匹配版本指引的发行包。执行 `bash scripts/check-updates.sh`、`bash scripts/check-feature-guide.sh` 和相关功能检查。
 3. 运行 `zsh scripts/prepare-release.sh docs/releases/v版本号.md`。脚本构建发行App、生成带签名的ZIP和appcast，校验音频、架构、版本、完整性及签名，不提交或上传。
 4. 到 `dist/releases/v版本号/` 检查四个待上传文件：ZIP、`appcast.xml`、同名Markdown更新说明、`SHA256SUMS.txt`。App只放在ZIP内；不要把音频单独作为Release资源上传。
 

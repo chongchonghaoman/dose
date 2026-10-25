@@ -39,6 +39,23 @@ import Sparkle
         check(comparator.compareVersion("0.1.9", toVersion: "0.1.10") == .orderedAscending, "numeric version comparison handles digit boundaries")
         check(info["SUEnableAutomaticChecks"] as? Bool == true, "automatic checks are enabled by default")
         check(info["SUAutomaticallyUpdate"] as? Bool == false, "downloads are not started silently")
+        let driver = LaunchUpdateUserDriver(hostBundle: .main, delegate: nil)
+        driver.isCheckingAtLaunch = true
+        var cancelled = false
+        driver.showUserInitiatedUpdateCheck { cancelled = true }
+        check(!cancelled && driver.isCheckingAtLaunch, "quiet launch check does not cancel the Sparkle session")
+        let offline = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)
+        var acknowledgements = 0
+        driver.showUpdateNotFoundWithError(offline) { acknowledgements += 1 }
+        check(acknowledgements == 1, "no-update launch result is acknowledged without a dialog")
+        driver.showUpdaterError(offline) { acknowledgements += 1 }
+        check(acknowledgements == 2, "launch network failure is acknowledged without a dialog")
+        driver.dismissUpdateInstallation()
+        check(!driver.isCheckingAtLaunch, "finishing launch check restores normal manual-check UI")
+        let developmentUpdater = AppUpdater()
+        developmentUpdater.start(beforeRelaunch: {})
+        developmentUpdater.start(beforeRelaunch: {})
+        check(!developmentUpdater.isAvailable, "development process stays isolated on repeated start")
         print("\(count) update checks passed")
     }
 }

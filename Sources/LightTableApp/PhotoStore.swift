@@ -60,6 +60,25 @@ final class PhotoPreview: @unchecked Sendable {
     }
 }
 
+/// Stable pixel buckets prevent new requests on every point of a resize.
+enum TablePreviewSizing {
+    static func maxPixel(size: CGSize, displayScale: CGFloat) -> Int {
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return 256 }
+        let scale = displayScale.isFinite ? max(1, displayScale) : 1
+        let pixels = ceil(max(size.width, size.height) * scale)
+        return [256, 384, 512, 768, 1024, 1536, 2200].first { CGFloat($0) >= pixels } ?? 2200
+    }
+}
+
+struct TablePreviewRequest: Hashable {
+    let url: URL
+    let maxPixel: Int
+    init(url: URL, maxPixel: Int) {
+        self.url = url
+        self.maxPixel = min(2200, max(128, maxPixel))
+    }
+}
+
 /// Bounded previews only; no source image is ever written or re-encoded.
 actor PhotoStore {
     static let shared = PhotoStore()

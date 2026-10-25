@@ -14,6 +14,8 @@ final class TableModel {
     var albumEditorPresented = false
     var editingAlbumID: UUID?
     private(set) var selectedIDs: Set<UUID> = []
+    private var selectionIndicatorsVisible = true
+    var showsSelection: Bool { selectionIndicatorsVisible && !loupeEnabled && !selectedIDs.isEmpty }
     // Compatibility for existing single-item actions. Selection is transient.
     var selectedID: UUID? {
         get { tableIDs.last { selectedIDs.contains($0) } }
@@ -54,7 +56,23 @@ final class TableModel {
     var isImporting = false
     var message: String?
     private(set) var thumbnails: [URL: CGImage] = [:]
+    // Full-resolution previews remain reserved for the loupe.
     private(set) var preparedPreviews: [URL: PhotoPreview] = [:]
+    enum StartupPhase { case preparing, finishing, needsAttention, ready }
+    private(set) var startupPhase: StartupPhase = .ready
+    private(set) var startupTotal = 0
+    private(set) var startupCompleted = 0
+    private(set) var startupFailedURLs: [URL] = []
+    private(set) var startupAttempt = 0
+    struct SurfaceRequest: Hashable { let preview: TablePreviewRequest; let attempt: Int }
+    var isPreparingStartup: Bool { startupPhase != .ready }
+    @ObservationIgnored private var startupURLs: [URL] = []
+    @ObservationIgnored private var startupSurfaceIDs = Set<UUID>()
+    @ObservationIgnored private var startupTask: Task<Void, Never>?
+    private(set) var preparedTablePreviews: [URL: PhotoPreview] = [:]
+    private var tablePreviewSizes: [URL: Int] = [:]
+    private var tablePreviewOrder: [URL] = []
+    @ObservationIgnored private var tablePreviewTasks: [TablePreviewRequest: (id: UUID, task: Task<PhotoPreview?, Never>)] = [:]
     private var thumbnailOrder: [URL] = []
     private var previewOrder: [URL] = []
     @ObservationIgnored private var previewTasks: [URL: Task<PhotoPreview?, Never>] = [:]
@@ -98,6 +116,15 @@ final class TableModel {
                 .filter { PhotoLibrary.supported($0) && seen.insert($0).inserted }.map { Photo(url: $0) }
             sourceLabel = restored.label
             if !aliases.isEmpty && message == nil { persist(to: storageURL) }
+            // Prepare only the restored table, never the entire imported library.
+            var startupSeen = Set<URL>()
+            startupURLs = (layout.slides.map(\.url) + onTableAlbums.flatMap { $0.pockets.compactMap(\.url) })
+                .filter { startupSeen.insert($0).inserted }
+            startupSurfaceIDs = Set(layout.slides.map(\.id) + onTableAlbums.flatMap {
+                $0.pockets.filter { $0.url != nil }.map(\.id)
+            })
+            startupTotal = startupURLs.count
+            if startupTotal > 0 { startupPhase = .preparing }
         }
     }
 
@@ -107,9 +134,58 @@ final class TableModel {
 
     func finishLightPreparation(_ id: UUID) {
         preparingLightSurfaces.remove(id)
+        startupSurfaceIDs.remove(id)
+        finishStartupIfReady()
         if isLit && lightStartedAt == nil && preparingLightSurfaces.isEmpty {
             lightStartedAt = ProcessInfo.processInfo.systemUptime
         }
+    }
+
+    /// One model-owned job survives individual window tasks being cancelled.
+    /// Await one photo at a time so restoring a table cannot fan out decodes.
+    func prepareStartup() async {
+        if let task = startupTask { await task.value; return }
+        guard startupPhase == .preparing else { return }
+        let pending = startupURLs.filter { preparedPreviews[$0] == nil }
+        startupCompleted = startupTotal - pending.count
+        startupFailedURLs = []
+        let task = Task { [weak self] in
+            for url in pending {
+                guard let self else { return }
+                if await self.preparePreview(url) != nil { self.startupCompleted += 1 }
+                else { self.startupFailedURLs.append(url) }
+                await Task.yield()
+            }
+            guard let self else { return }
+            self.startupPhase = self.startupFailedURLs.isEmpty ? .finishing : .needsAttention
+            self.finishStartupIfReady()
+        }
+        startupTask = task
+        await task.value
+        startupTask = nil
+    }
+
+    func retryStartup() async {
+        guard startupPhase == .needsAttention, startupTask == nil else { return }
+        // Re-run failed table surfaces too, rather than leaving their placeholders
+        // in place after the full-size image becomes available again.
+        startupSurfaceIDs = Set(layout.slides.map(\.id) + onTableAlbums.flatMap {
+            $0.pockets.filter { $0.url != nil }.map(\.id)
+        })
+        startupAttempt += 1
+        startupPhase = .preparing
+        await prepareStartup()
+    }
+
+    func continueStartup() {
+        guard startupPhase == .needsAttention else { return }
+        startupPhase = .finishing
+        finishStartupIfReady()
+    }
+
+    private func finishStartupIfReady() {
+        guard startupPhase == .finishing, startupSurfaceIDs.isEmpty, preparingLightSurfaces.isEmpty else { return }
+        startupPhase = .ready
     }
 
     func cacheThumbnail(_ image: CGImage, for url: URL) {
@@ -136,6 +212,46 @@ final class TableModel {
             preparedPreviews.removeValue(forKey: previewOrder.remove(at: index))
         }
         return image
+    }
+
+    func tablePreviewMaxPixel(for url: URL, displayScale: CGFloat) -> Int {
+        let slide = layout.slides.first { $0.url == url } ?? Slide(url: url, x: 0.5, y: 0.5)
+        let aspect = imageAspects[url] ?? thumbnails[url].map { Double($0.width) / Double($0.height) } ?? 1.5
+        let placement = screenPlacement(slide, aspect: aspect)
+        return TablePreviewSizing.maxPixel(size: CGSize(width: placement.width, height: placement.height),
+                                          displayScale: displayScale)
+    }
+
+    func prepareTablePreview(_ url: URL, maxPixel: Int) async -> PhotoPreview? {
+        let key = TablePreviewRequest(url: url, maxPixel: maxPixel)
+        if let cached = preparedTablePreviews[url], (tablePreviewSizes[url] ?? 0) >= key.maxPixel { return cached }
+        let task: Task<PhotoPreview?, Never>
+        let requestID: UUID
+        if let pending = tablePreviewTasks[key] {
+            task = pending.task
+            requestID = pending.id
+        } else {
+            task = Task { await PhotoStore.shared.preview(url, maxPixel: key.maxPixel) }
+            requestID = UUID()
+            tablePreviewTasks[key] = (requestID, task)
+        }
+        let loaded = await task.value
+        if tablePreviewTasks[key]?.id == requestID { tablePreviewTasks[key] = nil }
+        guard let loaded else { return nil }
+        // A late small request must not replace a completed larger request.
+        if let cached = preparedTablePreviews[url], (tablePreviewSizes[url] ?? 0) > key.maxPixel { return cached }
+        preparedTablePreviews[url] = loaded
+        tablePreviewSizes[url] = key.maxPixel
+        imageAspects[url] = Double(loaded.aspect)
+        tablePreviewOrder.removeAll { $0 == url }; tablePreviewOrder.append(url)
+        let placed = Set(layout.slides.map(\.url) + albums.filter { $0.position != nil }.flatMap { $0.pockets.compactMap(\.url) })
+        while tablePreviewOrder.count > 12,
+              let index = tablePreviewOrder.firstIndex(where: { !placed.contains($0) }) {
+            let evicted = tablePreviewOrder.remove(at: index)
+            preparedTablePreviews.removeValue(forKey: evicted)
+            tablePreviewSizes.removeValue(forKey: evicted)
+        }
+        return loaded
     }
 
     func chooseFolder() {
@@ -182,10 +298,14 @@ final class TableModel {
     func setSelection(_ ids: Set<UUID>) {
         let valid = ids.intersection(tableIDs)
         if valid != selectedIDs { selectedIDs = valid }
+        selectionIndicatorsVisible = true
     }
 
-    func select(_ id: UUID, extending: Bool = false) {
+    func select(_ id: UUID, extending: Bool = false, showIndicator: Bool = true) {
         guard tableIDs.contains(id) else { return }
+        // Dragging still targets the item for Delete and raises it above other
+        // films, but only an explicit click or marquee draws selection chrome.
+        selectionIndicatorsVisible = showIndicator
         if extending, selectedIDs.contains(id) {
             selectedIDs.remove(id)
             return

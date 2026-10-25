@@ -4,7 +4,7 @@
 
 一款本地运行的 macOS 观片应用，模拟反转片灯箱与幻灯机。导入照片，自由摆片、开灯、用放大镜观察，或进入黑底全屏幻灯模式。
 
-A local macOS light table and slide projector for viewing photographs, with optional GitHub update checks.
+A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
 
 ## 下载与运行
 
@@ -14,25 +14,25 @@ A local macOS light table and slide projector for viewing photographs, with opti
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-当前版本 **[v0.1.71](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.71)** 新增台面批量移除、大镜连续变焦，以及更新后新功能指引。
+当前版本 **[v0.1.72](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.72)** 新增胶片厚度、启动准备卡片及按显示尺寸加载的台面预览，修复拖动蓝框，并加强每次启动的更新检查。
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.71/LightTable-v0.1.71-macOS-arm64.zip)**
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.72/LightTable-v0.1.72-macOS-arm64.zip)**
 
 从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
 
-**v0.1.71** 普通指针支持多选，凑近观察支持连续变焦。普通指针下用⌘点选或Shift框选，Delete移出台面；底栏和原图保留。按住空格后按Tab切换倍率时平滑推近／拉远。详见[更新说明](docs/releases/v0.1.71.md)。
+**v0.1.72** 重启先准备台面高清预览，再进入观片；空台面直接进入，读取失败可重试。整理全局快捷键改为 **⇧Z**。薄片侧沿使用共用静态材质，普通拖动不再闪蓝框。完整内容见[更新说明](docs/releases/v0.1.72.md)。
 
 ## 应用内更新
 
-- 每次启动后台检查GitHub正式版本一次；同一次运行中开启多个窗口不会重复检查。无新版时不弹窗，不上传照片或布局。
+- 每次完整退出后重新启动，台面准备完成就检查GitHub正式版本一次，不受上次检查时间或周期检查开关影响；同一次运行中开启多个窗口不会重复检查。无新版或启动检查断网时不弹窗，不上传照片或布局。
 - 有新版时提示版本与更新内容；点击下载后，在App内选择「安装并重启」。安装前验证更新包与更新信息的签名，重启前保存布局。
-- 菜单栏「观片台 → 检查更新…」可随时手动检查；「自动检查更新」可关闭后台检查。持续运行时每24小时再检查一次。
+- 曾跳过的版本，下次启动也会重新提示。菜单栏「观片台 → 检查更新…」可随时手动检查；「运行期间自动检查更新」只控制持续运行时每24小时的周期检查。
 - 下载或网络错误可重试，不修改现有应用；更新包由GitHub Releases提供。
 - v0.1.70起提供签名更新源。发行维护说明见 [发布步骤](docs/RELEASING.md)。
 
 ## 新功能指引
 
-首次打开v0.1.71时显示本次更新卡片；可直接开始观片，或选择「看看怎么用」。三步提示可跳过，同版本只自动展示一次。菜单「帮助 → 本次更新…」可以重看，指引不会自动改变照片或台面布局。
+首次打开v0.1.72时显示本次更新卡片，介绍胶片厚度、启动准备和⇧Z；可直接开始观片，或选择「看看怎么用」。三步提示可跳过，同版本只自动展示一次。菜单「帮助 → 本次更新…」可以重看，指引不会自动改变照片或台面布局。
 
 ## 功能
 
@@ -65,7 +65,7 @@ A local macOS light table and slide projector for viewing photographs, with opti
 | A / V | 普通指针 / 放大镜 |
 | Tab | 放大镜模式下切换原倍率 / 8× |
 | 按住空格 | 凑近观察；松开退回 |
-| ⌘0 | 整理台面并回到全局 |
+| ⇧Z | 整理台面并回到全局 |
 | ⌘点选 / Shift拖动 | 多选 / 框选台面照片 |
 | Delete | 将选中照片批量移出台面 |
 | ↓ / →、↑ / ← | 幻灯模式下下一张、上一张 |
