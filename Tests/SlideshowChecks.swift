@@ -319,6 +319,59 @@ struct SlideshowChecks {
               "each collected film remains visible along an upper arc before reaching the machine")
         check(entryEnd.center == slot && entryEnd.behindFront && entryEnd.opacity == 0,
               "collected films disappear only after reaching the machine behind its front panel")
+        let rotatedEntry = SlideshowEntryPose(frame: sleeve, destination: slot, index: 0,
+                                              progress: 0, startingAngle: 24)
+        check(rotatedEntry.angle == 24, "a canvas photo starts its flight at the angle shown on the table")
+
+        let canvasModel = TableModel(restore: false)
+        canvasModel.boardSize = CGSize(width: 1000, height: 600)
+        canvasModel.cacheThumbnail(makeQuadrants(width: 120, height: 80), for: a)
+        let canvasID = canvasModel.layout.place(a, x: 0.24, y: 0.3)
+        canvasModel.layout.update(canvasID) { $0.angle = 24 }
+        canvasModel.zoom = 1.5
+        canvasModel.pan = CGPoint(x: -20, y: 30)
+        let canvasBounds = CGRect(x: 32, y: 10, width: 1000, height: 664)
+        let canvasSources = canvasModel.slideshowCanvasSources(in: canvasBounds)
+        check(canvasSources.count == 1 && canvasSources[0].frame == CGRect(x: 201, y: 260, width: 342, height: 228)
+              && canvasSources[0].startingAngle == 24,
+              "canvas entry captures camera scale, pan, toolbar offset and rotation without view preferences")
+        var entryLoads = 0
+        let canvasEntry = try await SlideshowEntrySource.prepare(canvasSources) { _ in entryLoads += 1; return nil }
+        check(canvasModel.trayPhotos.isEmpty && canvasEntry.count == 1 && entryLoads == 0,
+              "an empty tray still produces a visible canvas animation card from the captured image")
+        let traySource = SlideshowEntrySource(url: b, image: source, frame: sleeve)
+        let mixedEntry = try await SlideshowEntrySource.prepare([traySource] + canvasSources) { _ in nil }
+        check(mixedEntry.map(\.url) == [b, a] && mixedEntry[0].frame == sleeve && mixedEntry[1].frame == canvasSources[0].frame,
+              "tray and canvas cards both enter the animation with their own source positions")
+        let trayEntry = try await SlideshowEntrySource.prepare([traySource]) { _ in nil }
+        check(trayEntry.count == 1 && trayEntry[0].frame == sleeve,
+              "tray-only collection preserves the original sleeve source")
+        canvasModel.pan = CGPoint(x: 5000, y: 5000)
+        check(canvasModel.slideshowCanvasSources(in: canvasBounds).isEmpty,
+              "canvas films outside the visible viewport do not fly in from offscreen")
+
+        let packedModel = TableModel(restore: false)
+        packedModel.boardSize = CGSize(width: 1000, height: 600)
+        packedModel.photos = (0..<32).map { Photo(url: URL(fileURLWithPath: "/in-memory/packed-\($0).png")) }
+        packedModel.placeAllPhotos()
+        let packedSources = packedModel.slideshowCanvasSources(in: CGRect(x: 0, y: 0, width: 1000, height: 664))
+        var packedLoads = 0
+        let packedEntry = try await SlideshowEntrySource.prepare(packedSources) { _ in packedLoads += 1; return source }
+        check(packedModel.trayPhotos.isEmpty && packedSources.count == 32 && packedEntry.count == 32 && packedLoads == 32,
+              "one-click tiling produces all 32 canvas flight cards even when thumbnails must be loaded")
+        let cancelledEntry = Task { @MainActor in
+            try await SlideshowEntrySource.prepare(packedSources) { _ in
+                try? await Task.sleep(for: .milliseconds(50))
+                return source
+            }
+        }
+        cancelledEntry.cancel()
+        do {
+            _ = try await cancelledEntry.value
+            preconditionFailure("cancelled entry preparation must not publish flight cards")
+        } catch is CancellationError {
+            check(true, "cancelled entry preparation cannot start a stale slideshow")
+        }
 
         let stage = CGSize(width: 1200, height: 900), slideSize = CGSize(width: 1008, height: 604.8)
         let resting = ProjectionTravelPose.at(0, container: stage, image: slideSize)
@@ -470,6 +523,12 @@ struct SlideshowChecks {
         empty.nextSlide(); empty.previousSlide()
         check(!empty.slideshowMode && empty.currentSlideURL == nil && empty.nextSlideURL == nil,
               "an empty library cannot enter slideshow or create a navigation target")
+        let canvasOnly = TableModel(restore: false)
+        canvasOnly.layout.place(a, x: 0.5, y: 0.5)
+        canvasOnly.enterSlideshow()
+        check(canvasOnly.slideshowMode && canvasOnly.slideshowOrder == [a],
+              "a canvas-only photo can start a slideshow with no active-tray photos")
+        canvasOnly.exitSlideshow()
         for initiallyLit in [false, true] {
             let model = TableModel(restore: false)
             model.photos = [a, b, c].map { Photo(url: $0) }

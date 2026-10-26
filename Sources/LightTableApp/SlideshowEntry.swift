@@ -1,12 +1,68 @@
 import CoreGraphics
 import Foundation
+import LightTableCore
 import SwiftUI
 
 struct SlideshowEntryPhoto: Identifiable {
     let url: URL
     let image: CGImage
     let frame: CGRect
+    var startingAngle: Double = 0
+    var colorMultiplier: Double = 1
     var id: URL { url }
+}
+
+struct SlideshowEntrySource {
+    let url: URL
+    let image: CGImage?
+    let frame: CGRect
+    var startingAngle: Double = 0
+    var colorMultiplier: Double = 1
+
+    @MainActor static func prepare(_ sources: [Self],
+                                  load: (URL) async -> CGImage?) async throws -> [SlideshowEntryPhoto] {
+        var photos: [SlideshowEntryPhoto] = []
+        for source in sources {
+            try Task.checkCancellation()
+            let image: CGImage?
+            if let cached = source.image { image = cached }
+            else { image = await load(source.url) }
+            try Task.checkCancellation()
+            guard let image else { continue }
+            // Retain each image in this presentation, independently of cache eviction.
+            photos.append(SlideshowEntryPhoto(url: source.url, image: image, frame: source.frame,
+                                               startingAngle: source.startingAngle,
+                                               colorMultiplier: source.colorMultiplier))
+        }
+        return photos
+    }
+}
+
+extension TableModel {
+    func slideshowCanvasSources(in canvasBounds: CGRect) -> [SlideshowEntrySource] {
+        guard canvasBounds.width > 1, canvasBounds.height > 1 else { return [] }
+        return layout.slides.compactMap { slide in
+            let preview = preparedTablePreviews[slide.url] ?? preparedPreviews[slide.url]
+            // Keep the unlit canvas raster; a flight must not switch on the film.
+            let image = (isLit ? preview?.source : preview?.dark) ?? thumbnails[slide.url]
+            let aspect = preview.map { Double($0.aspect) }
+                ?? image.map { Double($0.width) / Double($0.height) }
+                ?? imageAspects[slide.url] ?? 1.5
+            let placement = screenPlacement(slide, aspect: aspect)
+            let center = CGPoint(x: canvasBounds.minX + placement.x,
+                                 y: canvasBounds.minY + 64 + placement.y)
+            let frame = CGRect(x: center.x - placement.width / 2, y: center.y - placement.height / 2,
+                               width: placement.width, height: placement.height)
+            let radians = placement.angle * .pi / 180
+            let rotatedSize = CGSize(width: placement.width * abs(cos(radians)) + placement.height * abs(sin(radians)),
+                                     height: placement.width * abs(sin(radians)) + placement.height * abs(cos(radians)))
+            let visibleBounds = CGRect(x: center.x - rotatedSize.width / 2, y: center.y - rotatedSize.height / 2,
+                                       width: rotatedSize.width, height: rotatedSize.height)
+            guard frame.width > 1, frame.height > 1, visibleBounds.intersects(canvasBounds) else { return nil }
+            return SlideshowEntrySource(url: slide.url, image: image, frame: frame, startingAngle: placement.angle,
+                                        colorMultiplier: !isLit && preview == nil ? 0.10 : 1)
+        }.sorted { $0.frame.minX < $1.frame.minX }
+    }
 }
 
 struct SlideshowEntry: View {
@@ -62,6 +118,7 @@ struct SlideshowEntry: View {
             SlideshowEntryCard(photo: photo)
                 .modifier(SlideshowEntryFlight(frame: photo.frame, index: index,
                     destination: destination, foreground: foreground,
+                    startingAngle: photo.startingAngle,
                     progress: departing.contains(photo.id) ? 1 : 0))
         }
     }
@@ -129,6 +186,7 @@ private struct SlideshowEntryCard: View {
             .interpolation(.medium)
             .scaledToFit()
             .frame(width: photo.frame.width, height: photo.frame.height)
+            .colorMultiply(Color(white: photo.colorMultiplier))
             .background(Color(white: 0.055))
             .clipShape(RoundedRectangle(cornerRadius: 1.5))
             .overlay(RoundedRectangle(cornerRadius: 1.5)
@@ -145,7 +203,7 @@ struct SlideshowEntryPose {
     let behindFront: Bool
     let opacity: Double
 
-    init(frame: CGRect, destination: CGPoint, index: Int, progress: Double) {
+    init(frame: CGRect, destination: CGPoint, index: Int, progress: Double, startingAngle: Double = 0) {
         let t = min(1, max(0, progress))
         let p = CGFloat(t)
         let q = 1 - p
@@ -161,7 +219,7 @@ struct SlideshowEntryPose {
                              + 3 * q * p * p * second.y + p * p * p * destination.y)
         let eased = t * t * (3 - 2 * t)
         scale = CGFloat(1 - 0.28 * eased)
-        angle = Double(index % 5 - 2) * 3 * sin(.pi * t)
+        angle = startingAngle + Double(index % 5 - 2) * 3 * sin(.pi * t)
         tilt = 58 * eased
         behindFront = t >= 0.84
         opacity = min(1, max(0, (1 - t) / 0.03))
@@ -173,6 +231,7 @@ private struct SlideshowEntryFlight: AnimatableModifier {
     let index: Int
     let destination: CGPoint
     let foreground: Bool
+    let startingAngle: Double
     var progress: Double
 
     var animatableData: Double {
@@ -181,7 +240,8 @@ private struct SlideshowEntryFlight: AnimatableModifier {
     }
 
     func body(content: Content) -> some View {
-        let pose = SlideshowEntryPose(frame: frame, destination: destination, index: index, progress: progress)
+        let pose = SlideshowEntryPose(frame: frame, destination: destination, index: index,
+                                      progress: progress, startingAngle: startingAngle)
         content
             .rotationEffect(.degrees(pose.angle))
             .rotation3DEffect(.degrees(pose.tilt), axis: (x: 1, y: 0, z: 0), perspective: 0.25)

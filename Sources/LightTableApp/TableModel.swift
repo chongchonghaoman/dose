@@ -56,6 +56,7 @@ final class TableModel {
     }
     var loupeEnabled = false
     var slideshowMode = false
+    var returnToPastMode = false
     var slideshowIndex = 0
     private(set) var slideshowOrder: [URL] = []
     var zoom = 1.0
@@ -501,8 +502,9 @@ final class TableModel {
     }
 
     func enterSlideshow() {
-        guard !slideshowMode, !photos.isEmpty else { return }
-        slideshowOrder = photos.map(\.url).shuffled()
+        let urls = Self.uniqueURLs(photos.map(\.url) + layout.slides.map(\.url))
+        guard !slideshowMode, !urls.isEmpty else { return }
+        slideshowOrder = urls.shuffled()
         slideshowIndex = 0
         slideshowMode = true
     }

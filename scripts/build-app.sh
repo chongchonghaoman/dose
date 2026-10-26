@@ -19,6 +19,7 @@ fi
 for sound in ShutterClick ShutterClickRoom ShutterArrivalRoom; do
     cp "$soundResources/$sound.wav" "$app/Contents/Resources/$sound.wav"
 done
+ditto "$soundResources/ReturnToPast" "$app/Contents/Resources/ReturnToPast"
 cp LICENSE "$app/Contents/Resources/LICENSE"
 cp THIRD_PARTY_NOTICES.md "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
 cat > "$app/Contents/Info.plist" <<PLIST

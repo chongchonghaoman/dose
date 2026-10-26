@@ -36,15 +36,19 @@ struct FeatureGuideWelcome: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("观片台已更新").font(.system(size: 21, weight: .semibold))
-                    Text("v\(version) · 开灯响应与倍率显示")
+                    Text("v\(version) · 回到过去")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }.padding(.bottom, 24)
-            feature("sun.max", title: "开灯瞬间过曝调整",
-                    text: "开灯时短暂过曝调整为最高 +0.8 EV。\n点亮与回落节奏保持，随后恢复原有亮度。")
+            feature("clock.arrow.circlepath", title: "让照片从黑暗中浮现",
+                    text: "点击右上角「回到过去」，从下方底栏拖一张照片到播放区。\n本机生成完成后，场景会从黑屏逐粒显现。")
             Divider().padding(.vertical, 19)
-            feature("plus.magnifyingglass", title: "当前倍率更清楚",
-                    text: "选中的倍率改为黑底白字，与幻灯片按钮一致。\n点击、拖动和 Tab 切换方式保持不变。")
+            feature("hand.draw", title: "在照片附近慢慢看",
+                    text: "左键拖动小幅旋转，右键拖动平移，滚轮或触控板捏合缩放。\n双击复位，按 Esc 返回观片台。")
+            Divider().padding(.vertical, 19)
+            feature("arrow.down.circle", title: "首次使用需要准备",
+                    text: "首次生成会联网下载运行环境和模型，后续复用。\n照片在本机处理；低内存电脑会使用更慢的生成方式。",
+                    note: "SHARP 模型仅限非商业科学研究，具体限制见随附模型许可。")
             HStack(spacing: 10) {
                 Spacer()
                 Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle(primary: true))

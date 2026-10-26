@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var flightPointer: CGPoint?
     @State private var loupe = LoupeExperience()
     @State private var slideshowTray = SlideshowTraySnapshot()
+    @State private var entryCanvasBounds = CGRect.zero
     @State private var entryPreparationID: UUID?
     @State private var entryPhotos: [SlideshowEntryPhoto] = []
     @State private var entryComplete = false
@@ -31,6 +32,7 @@ struct ContentView: View {
     @State private var guideWindowID = UUID()
     @State private var guideWindowReady = false
     @State private var guideBounds = CGRect.zero
+    @State private var returnToPast = ReturnToPastSession.shared
 
     init(model: TableModel, loupe: LoupeExperience? = nil) {
         self.model = model
@@ -39,17 +41,20 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            if !model.slideshowMode || !entryComplete {
+            if !model.returnToPastMode && (!model.slideshowMode || !entryComplete) {
                 VStack(spacing: 0) {
-                    ZStack(alignment: .topTrailing) {
-                        TableCanvas(model: model, loupe: loupe, liftedPhoto: flight?.photo.url,
-                                    guideBlocked: model.isPreparingStartup || featureGuide.isWelcome(in: guideWindowID),
-                                    guideExclusion: guideStep == nil ? nil : guideBounds.offsetBy(dx: -canvasFrame.minX, dy: -canvasFrame.minY))
-                            .featureGuideTarget(.viewingArea)
-                            .background(GeometryReader { proxy in
-                                Color.clear.preference(key: WorkbenchFrameKey.self, value: proxy.frame(in: .named("workbench")))
-                            })
-                        tools.padding(.top, 14).padding(.trailing, 24)
+                    GeometryReader { canvas in
+                        ZStack(alignment: .topTrailing) {
+                            TableCanvas(model: model, loupe: loupe, liftedPhoto: flight?.photo.url,
+                                        guideBlocked: model.isPreparingStartup || featureGuide.isWelcome(in: guideWindowID),
+                                        guideExclusion: guideStep == nil ? nil : guideBounds.offsetBy(dx: -canvasFrame.minX, dy: -canvasFrame.minY))
+                                .featureGuideTarget(.viewingArea)
+                                .background(GeometryReader { proxy in
+                                    Color.clear.preference(key: WorkbenchFrameKey.self, value: proxy.frame(in: .named("workbench")))
+                                })
+                            tools(canvasBounds: canvas.frame(in: .named("workbench")))
+                                .padding(.top, 14).padding(.trailing, 24)
+                        }
                     }
                     tray.padding(.horizontal, 16).padding(.vertical, 16)
                 }
@@ -64,6 +69,9 @@ struct ContentView: View {
                         entryComplete = true
                     }
                 }
+            }
+            if model.returnToPastMode {
+                ReturnToPastMode(model: model, session: returnToPast)
             }
         }
         .coordinateSpace(name: "workbench")
@@ -89,10 +97,10 @@ struct ContentView: View {
             }
         }
         .overlay {
-            if !model.slideshowMode && !model.isPreparingStartup { LoupeOverlay(experience: loupe, canvasFrame: canvasFrame) }
+            if !model.slideshowMode && !model.isPreparingStartup && !model.returnToPastMode { LoupeOverlay(experience: loupe, canvasFrame: canvasFrame) }
         }
         .overlayPreferenceValue(FeatureGuideAnchors.self) { anchors in
-            if let step = guideStep, !model.slideshowMode && !model.albumEditorPresented {
+            if let step = guideStep, !model.slideshowMode && !model.returnToPastMode && !model.albumEditorPresented {
                 FeatureGuideTour(step: step, anchors: anchors, boardFrame: canvasFrame,
                     hasPhotos: !model.tableIDs.isEmpty, selectedCount: model.selectedIDs.count,
                     loupeEnabled: model.loupeEnabled,
@@ -122,7 +130,7 @@ struct ContentView: View {
                 .onAppear { featureGuide.didPresent(in: guideWindowID) }
         }
         .background {
-            LoupeKeyboard(enabled: !model.isPreparingStartup && !model.slideshowMode && model.loupeEnabled && flight == nil && !model.albumEditorPresented && !featureGuide.welcomeVisible,
+            LoupeKeyboard(enabled: !model.isPreparingStartup && !model.slideshowMode && !model.returnToPastMode && model.loupeEnabled && flight == nil && !model.albumEditorPresented && !featureGuide.welcomeVisible,
                           pressed: { loupe.press() },
                           released: { loupe.release(reduceMotion: reduceMotion) },
                           cancelled: { loupe.cancel() },
@@ -152,7 +160,7 @@ struct ContentView: View {
             slideshowTray = SlideshowTraySnapshot()
         }
         .onChange(of: model.slideshowMode) { _, active in
-            if active { featureGuide.finish(in: guideWindowID) }
+            if active { featureGuide.finish(in: guideWindowID); model.returnToPastMode = false; returnToPast.close() }
             loupe.cancel()
             flight = nil; flightPointer = nil; cancelledPull = false; releaseFlightCursor()
             if !active {
@@ -161,11 +169,15 @@ struct ContentView: View {
             }
         }
         .onExitCommand {
+            if model.returnToPastMode {
+                model.returnToPastMode = false; returnToPast.close(); return
+            }
             loupe.cancel(); returnToSleeve()
             if !model.slideshowMode && !model.albumEditorPresented { model.setSelection([]) }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in returnToSleeve() }
         .onDisappear {
+            returnToPast.close()
             featureGuide.finish(in: guideWindowID)
             entryPreparationID = nil
             loupe.cancel(); flight = nil; cancelledPull = false; releaseFlightCursor()
@@ -173,7 +185,12 @@ struct ContentView: View {
         .background(Color(white: 0.025))
         .sheet(isPresented: $model.albumEditorPresented) { AlbumEditor(model: model) }
         .onChange(of: model.albumEditorPresented) { _, opened in
-            if opened { loupe.cancel(); featureGuide.finish(in: guideWindowID) }
+            if opened { loupe.cancel(); featureGuide.finish(in: guideWindowID); returnToPast.close() }
+        }
+        .onChange(of: model.returnToPastMode) { _, active in
+            loupe.cancel(); returnToSleeve()
+            if active { featureGuide.finish(in: guideWindowID); entryPreparationID = nil }
+            else { returnToPast.close() }
         }
         .alert("观片台", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("好") { model.message = nil }
@@ -192,11 +209,11 @@ struct ContentView: View {
 
     private var guideStep: Int? { featureGuide.step(in: guideWindowID) }
     private var guideMenuAvailable: Bool {
-        featureGuide.available && !model.isPreparingStartup && !model.slideshowMode && !model.albumEditorPresented && model.message == nil && flight == nil
+        featureGuide.available && !model.isPreparingStartup && !model.slideshowMode && !model.returnToPastMode && !model.albumEditorPresented && model.message == nil && flight == nil
     }
     private var guideReady: Bool { guideWindowReady && guideMenuAvailable && featureGuide.phase == .idle }
 
-    private var tools: some View {
+    private func tools(canvasBounds: CGRect) -> some View {
         HStack(spacing: 9) {
             HStack(spacing: 2) {
                 tool("arrow.up.and.down.and.arrow.left.and.right", "普通指针（A）；⌘点选多张，Shift拖动框选，Delete收回底栏", active: !model.loupeEnabled) { model.loupeEnabled = false }
@@ -240,7 +257,7 @@ struct ContentView: View {
             }.buttonStyle(.plain).keyboardShortcut("l", modifiers: .command)
             .help("模拟反转片背光；不修改原图")
             Button {
-                startSlideshow()
+                startSlideshow(canvasBounds: canvasBounds)
             } label: {
                 Label("幻灯片", systemImage: "play.rectangle")
                     .font(.system(size: 12, weight: .medium))
@@ -249,7 +266,16 @@ struct ContentView: View {
                     .background(Color(white: 0.15), in: Capsule())
             }.buttonStyle(.plain)
             .help("进入幻灯片放映模式")
-            .disabled(model.photos.isEmpty || entryPreparationID != nil)
+            .disabled((model.photos.isEmpty && model.layout.slides.isEmpty) || entryPreparationID != nil)
+            Button {
+                returnToPast.close()
+                model.returnToPastMode = true
+            } label: {
+                ReturnToPastEntryLabel()
+            }.buttonStyle(ReturnToPastEntryButtonStyle())
+            .accessibilityLabel("回到过去")
+            .help("进入回到过去，拖入原始照片生成三维场景")
+            .disabled(entryPreparationID != nil)
         }.foregroundStyle(TableStyle.ink)
     }
 
@@ -388,12 +414,14 @@ struct ContentView: View {
                width: model.boardSize.width, height: model.boardSize.height)
     }
 
-    private func startSlideshow() {
-        guard !model.photos.isEmpty, !model.slideshowMode, entryPreparationID == nil else { return }
-        if reduceMotion || model.trayPhotos.isEmpty {
+    private func startSlideshow(canvasBounds: CGRect) {
+        guard (!model.photos.isEmpty || !model.layout.slides.isEmpty),
+              !model.slideshowMode, entryPreparationID == nil else { return }
+        if reduceMotion {
             entryComplete = true
             model.enterSlideshow()
         } else {
+            entryCanvasBounds = canvasBounds
             entryPreparationID = UUID()
         }
     }
@@ -401,36 +429,26 @@ struct ContentView: View {
     @MainActor private func prepareSlideshow(_ run: UUID) async {
         defer { if entryPreparationID == run { entryPreparationID = nil } }
         do {
-            if model.trayPhotos.isEmpty {
-                entryComplete = true
-                model.enterSlideshow()
-                return
-            }
+            // Capture the canvas directly from the button's GeometryReader.
+            // Canvas sources must not depend on preferences crossing TimelineView.
+            let canvasSources = model.slideshowCanvasSources(in: entryCanvasBounds)
             // A click can arrive before LazyHStack has published its first anchors.
             for _ in 0..<8 {
                 guard entryPreparationID == run, !Task.isCancelled else { return }
-                if !visibleSlideshowPhotos.isEmpty { break }
+                if !visibleSlideshowPhotos.isEmpty || model.trayPhotos.isEmpty { break }
                 try await Task.sleep(for: .milliseconds(32))
             }
-            // Decode only missing visible thumbnails; never prepare the full library.
-            let missing = visibleSlideshowPhotos.filter { $0.image == nil && model.thumbnails[$0.url] == nil }
-            for item in missing.prefix(12) {
-                guard entryPreparationID == run, !Task.isCancelled, !model.slideshowMode else { return }
-                if let image = await PhotoThumbnails.shared.thumbnail(item.url) {
-                    model.cacheThumbnail(image, for: item.url)
-                }
+            let traySources = visibleSlideshowPhotos.map {
+                SlideshowEntrySource(url: $0.url, image: $0.image ?? model.thumbnails[$0.url], frame: $0.frame)
             }
-            // Let newly available images appear in their sleeves before capturing them.
+            let photos = try await SlideshowEntrySource.prepare(traySources + canvasSources) { url in
+                let image = await PhotoThumbnails.shared.thumbnail(url)
+                if let image { model.cacheThumbnail(image, for: url) }
+                return image
+            }
+            // Let loaded sleeve images settle before replacing the original surfaces.
             try await Task.sleep(for: .milliseconds(32))
             guard entryPreparationID == run, !Task.isCancelled, !model.slideshowMode else { return }
-            let photos = visibleSlideshowPhotos.compactMap { item -> SlideshowEntryPhoto? in
-                guard let image = item.image ?? model.thumbnails[item.url] else { return nil }
-                return SlideshowEntryPhoto(url: item.url, image: image, frame: item.frame)
-            }
-            guard !photos.isEmpty else {
-                model.message = "底栏还没有可放映的照片。请滚动到照片，等待缩略图显示后重试。"
-                return
-            }
             entryPhotos = photos
             entryComplete = false
             model.enterSlideshow()
@@ -621,7 +639,9 @@ struct TableCanvas: View {
             let size = CGSize(width: fitted.width, height: fitted.height)
             let rect = CGRect(x: 0, y: 64, width: size.width, height: size.height)
             let canvasRect = CGRect(origin: .zero, size: proxy.size)
-            let lensPoint = model.loupeEnabled && draggingID == nil && liftedPhoto == nil && !isPanning ? loupe.sourcePoint.flatMap { canvasRect.contains($0) ? $0 : nil } : nil
+            let lensPoint = model.loupeEnabled && draggingID == nil && liftedPhoto == nil && !isPanning ? loupe.sourcePoint.flatMap {
+                canvasRect.contains($0) ? $0 : nil
+            } : nil
             let viewport = lensPoint.map {
                 LoupeGeometry.sourceViewport(point: $0, in: loupe.viewingSize,
                     closeViewing: loupe.anchor != nil, mode: loupe.closeMagnification)
@@ -669,7 +689,7 @@ struct TableCanvas: View {
                 }
                 ForEach(model.layout.slides) { slide in
                     SlideView(model: model, slide: slide, boardSize: size, transmission: light.transmission, flare: light.flare, draggingID: $draggingID)
-                        .opacity(slide.url == liftedPhoto ? 0 : 1)
+                        .opacity(model.slideshowMode || slide.url == liftedPhoto ? 0 : 1)
                         .offset(x: rect.minX, y: rect.minY)
                         .zIndex((layerIndices[slide.id] ?? 0) + 1)
                 }
@@ -715,10 +735,10 @@ struct TableCanvas: View {
             .onChange(of: isCanvasZooming) { _, active in if !active { endCanvasZoom() } }
             .onDisappear { endPan(); endCanvasZoom() }
             .background {
-                CanvasNavigation(enabled: !guideBlocked && !model.slideshowMode && draggingID == nil && liftedPhoto == nil && !isPanning && !isCanvasZooming && selectionBeforeMarquee == nil,
+                CanvasNavigation(enabled: !guideBlocked && !model.slideshowMode && !model.returnToPastMode && draggingID == nil && liftedPhoto == nil && !isPanning && !isCanvasZooming && selectionBeforeMarquee == nil,
                     excludedRect: guideExclusion,
                     moved: { model.panBy($0) }, zoomed: { model.zoomCanvas(by: $0, around: $1) })
-                CanvasSelection(enabled: !guideBlocked && !model.loupeEnabled && !model.slideshowMode && !model.albumEditorPresented
+                CanvasSelection(enabled: !guideBlocked && !model.loupeEnabled && !model.slideshowMode && !model.returnToPastMode && !model.albumEditorPresented
                     && draggingID == nil && liftedPhoto == nil && !isPanning && !isCanvasZooming,
                     excludedRect: guideExclusion,
                     began: { selectionBeforeMarquee = model.selectedIDs },
@@ -972,7 +992,7 @@ private struct SlideView: View {
                     $0.y = (resting.y + (value.translation.height + start.y - model.pan.y) / model.zoom) / model.worldSize.height
                 }
                 dragStartPan = nil; dragPointer = nil
-            })
+            }, including: .all)
         .task(id: isDragging) {
             guard isDragging else { return }
             while !Task.isCancelled {
@@ -995,9 +1015,9 @@ private struct SlideView: View {
             if draggingID == slide.id { draggingID = nil }
         }
         .simultaneousGesture(MagnificationGesture().updating($magnification) { value, state, _ in state = value }
-            .onEnded { value in commit { $0.width *= value } })
+            .onEnded { value in commit { $0.width *= value } }, including: .all)
         .simultaneousGesture(RotationGesture().updating($rotation) { value, state, _ in state = value }
-            .onEnded { value in commit { $0.angle += value.degrees } })
+            .onEnded { value in commit { $0.angle += value.degrees } }, including: .all)
         .contextMenu {
             Button(selected && model.selectedIDs.count > 1 ? "收回所选 \(model.selectedIDs.count) 项到底栏" : "收回底栏") {
                 if !selected { model.select(slide.id) }; model.removeSelected()

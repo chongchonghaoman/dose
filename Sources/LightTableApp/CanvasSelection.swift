@@ -6,6 +6,7 @@ import SwiftUI
 struct CanvasSelection: NSViewRepresentable {
     let enabled: Bool
     var excludedRect: CGRect? = nil
+    var excludedPoint: ((CGPoint) -> Bool)? = nil
     let began: () -> Void
     let changed: (CGRect) -> Void
     let ended: () -> Void
@@ -16,6 +17,7 @@ struct CanvasSelection: NSViewRepresentable {
         view.began = began; view.changed = changed
         view.ended = ended; view.cancelled = cancelled
         view.excludedRect = excludedRect
+        view.excludedPoint = excludedPoint
         view.enabled = enabled
         if !enabled { view.cancel() }
     }
@@ -23,6 +25,7 @@ struct CanvasSelection: NSViewRepresentable {
 
     final class MonitorView: NSView {
         var excludedRect: CGRect?
+        var excludedPoint: ((CGPoint) -> Bool)?
         var enabled = false
         var began: (() -> Void)?
         var changed: ((CGRect) -> Void)?
@@ -62,7 +65,8 @@ struct CanvasSelection: NSViewRepresentable {
                       event.modifierFlags.contains(.shift),
                       event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
                       bounds.contains(point), point.y >= 64,
-                      excludedRect?.contains(point) != true else { return event }
+                      excludedRect?.contains(point) != true,
+                      excludedPoint?(point) != true else { return event }
                 origin = point
                 NSCursor.crosshair.push(); hasCursor = true
                 began?()

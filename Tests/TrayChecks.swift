@@ -65,7 +65,8 @@ private final class DeferredFile: @unchecked Sendable {
         check(Set(model.allPhotos.map(\.url)) == Set([a, b, c]) && model.allPhotos.count == 3, "shared album library deduplicates photos across trays")
         model.selectTray(second)
         model.enterSlideshow()
-        check(Set(model.slideshowOrder) == Set([a, c]) && model.slideshowOrder.count == 2, "slideshow uses only the selected tray")
+        check(Set(model.slideshowOrder) == Set([a, c]) && model.slideshowOrder.count == 2,
+              "slideshow includes shared-canvas photos without duplicating selected-tray membership")
         model.exitSlideshow()
         model.flushSave()
         let restored = TableModel(storageURL: storage)
@@ -77,7 +78,8 @@ private final class DeferredFile: @unchecked Sendable {
         let emptyRestored = TableModel(storageURL: storage)
         check(emptyRestored.activeTrayID == empty && emptyRestored.photos.isEmpty && emptyRestored.trays.count == 3, "empty selected trays stay empty after restart")
         emptyRestored.enterSlideshow()
-        check(!emptyRestored.slideshowMode, "an empty selected tray cannot play photos from other trays")
+        check(emptyRestored.slideshowMode && Set(emptyRestored.slideshowOrder) == Set([a]),
+              "an empty selected tray can still play a photo already on the shared canvas")
         let oldStorage = root.appendingPathComponent("legacy.json")
         try JSONEncoder().encode(Legacy(urls: [a, a], layout: layout, label: "旧图库")).write(to: oldStorage)
         let migrated = TableModel(storageURL: oldStorage)

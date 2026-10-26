@@ -62,6 +62,18 @@ def validate(app, feed=None):
                 f"bundled {name} matches the selected sound")
     for name in ("LICENSE", "THIRD_PARTY_NOTICES.md", "Sparkle-LICENSE.txt"):
         require((app / "Contents/Resources" / name).is_file(), f"bundled {name}")
+    scene_source = ROOT / "Sources/LightTableApp/Resources/ReturnToPast"
+    scene_bundle = app / "Contents/Resources/ReturnToPast"
+    resource_hashes = {str(path.relative_to(scene_source)): hashlib.sha256(path.read_bytes()).digest()
+                       for path in scene_source.rglob("*") if path.is_file()}
+    bundled_hashes = {str(path.relative_to(scene_bundle)): hashlib.sha256(path.read_bytes()).digest()
+                      for path in scene_bundle.rglob("*") if path.is_file()}
+    require(len(resource_hashes) >= 53 and resource_hashes == bundled_hashes,
+            "Return to Past worker, viewer, SHARP source and licenses match production resources")
+    require(all((scene_bundle / name).is_file() for name in (
+        "viewer-licenses.txt", "sharp-source/LICENSE", "sharp-source/LICENSE_MODEL",
+        "sharp-source/ACKNOWLEDGEMENTS", "sharp-source/PROVENANCE.txt")),
+        "Return to Past third-party licenses and provenance included")
     if feed is None:
         return
     items = ET.parse(feed).findall("./channel/item")
@@ -91,6 +103,9 @@ def validate(app, feed=None):
         for name in ("ShutterClick", "ShutterClickRoom", "ShutterArrivalRoom"):
             require(package.read(entries[f"观片台.app/Contents/Resources/{name}.wav"]) ==
                     (app / f"Contents/Resources/{name}.wav").read_bytes(), f"archive contains {name}")
+        require(all(hashlib.sha256(package.read(entries[f"观片台.app/Contents/Resources/ReturnToPast/{name}"])).digest() == digest
+                    for name, digest in resource_hashes.items()),
+                "archive contains all verified Return to Past resources")
     verifier = ROOT / ".build/artifacts/sparkle/Sparkle/bin/sign_update"
     subprocess.run([str(verifier), "--account", ACCOUNT, "--verify", str(archive), signature], check=True)
     subprocess.run([str(verifier), "--account", ACCOUNT, "--verify", str(feed)], check=True)

@@ -24,10 +24,10 @@ enum FeatureGuideTarget: Hashable {
 @MainActor @Observable
 final class FeatureGuideState {
     static let shared = FeatureGuideState()
-    static let releaseVersion = "0.1.75"
+    static let releaseVersion = "0.1.87"
     static let seenKey = "featureGuide.presentedVersions"
     static let seenRevisionKey = "featureGuide.presentedRevisions"
-    static let contentRevision = "lighting-notes-1"
+    static let contentRevision = "return-to-past-1"
     static let tourStepCount = 0
 
     enum Phase: Equatable {

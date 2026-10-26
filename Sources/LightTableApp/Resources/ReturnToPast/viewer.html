@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' lighttable-scene:; connect-src lighttable-scene: blob:; worker-src blob:; child-src blob:; style-src 'unsafe-inline'; img-src data: blob: lighttable-scene:;">
+  <title>回到过去</title>
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
+    #scene { display: block; width: 100%; height: 100%; visibility: hidden; touch-action: none; outline: none; }
+  </style>
+</head>
+<body>
+  <canvas id="scene" aria-label="回到过去，三维照片。左键小幅旋转，右键小幅平移，滚轮或捏合自由缩放，双击复位。"></canvas>
+  <script src="viewer-playcanvas.js"></script>
+  <script src="viewer.js"></script>
+</body>
+</html>

@@ -12,7 +12,9 @@ struct LightTableApp: App {
                 .task(id: model.isPreparingStartup) {
                     if !model.isPreparingStartup { updater.start(beforeRelaunch: model.flushSave) }
                 }
-                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.flushSave() }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    ReturnToPastSession.shared.close(); model.flushSave()
+                }
                 .onDisappear { model.flushSave() }
                 .onOpenURL { url in
                     let trayID = model.activeTrayID
@@ -34,24 +36,24 @@ struct LightTableApp: App {
             }
             CommandGroup(replacing: .newItem) {
                 Button("从文件夹导入…", action: model.chooseFolder).keyboardShortcut("o")
-                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || model.returnToPastMode || FeatureGuideState.shared.welcomeVisible)
                 Button("新建底栏") { model.newTray() }
-                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || model.returnToPastMode || FeatureGuideState.shared.welcomeVisible)
                 Button("添加照片…", action: model.choosePhotos).keyboardShortcut("o", modifiers: [.command, .shift])
-                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || model.returnToPastMode || FeatureGuideState.shared.welcomeVisible)
             }
             CommandMenu("观片") {
                 Button(model.isLit ? "关灯" : "开灯") { model.isLit.toggle() }.keyboardShortcut("l", modifiers: .command)
-                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || model.returnToPastMode || FeatureGuideState.shared.welcomeVisible)
                 Button("普通指针") { model.loupeEnabled = false }.keyboardShortcut("a", modifiers: [])
-                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || model.returnToPastMode || FeatureGuideState.shared.welcomeVisible)
                 Button("放大镜") { model.loupeEnabled = true }.keyboardShortcut("v", modifiers: [])
-                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || model.returnToPastMode || FeatureGuideState.shared.welcomeVisible)
                 Button("整理全局", action: model.fitToWindow).keyboardShortcut("z", modifiers: .shift)
-                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || model.returnToPastMode || FeatureGuideState.shared.welcomeVisible)
                 Button(model.selectedTrayPhoto != nil ? "从底栏删除照片" : (model.selectedIDs.count > 1 ? "收回所选 \(model.selectedIDs.count) 项到底栏" : "收回底栏"), action: model.deleteSelection)
                     .keyboardShortcut(.delete, modifiers: [])
-                    .disabled(model.isPreparingStartup || model.slideshowMode || model.albumEditorPresented || !model.canDeleteSelection || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || model.returnToPastMode || model.albumEditorPresented || !model.canDeleteSelection || FeatureGuideState.shared.welcomeVisible)
             }
         }
     }
