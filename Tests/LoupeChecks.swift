@@ -42,15 +42,15 @@ struct LoupeChecks {
             let r = hypot(Double(x) - 260, Double(y) - 260) / 260
             let index = (y * 520 + x) * 4
             let difference = (0..<3).reduce(0.0) { $0 + abs(Double(a[index + $1]) - Double(b[index + $1])) } / 3
-            if r < 0.88 { centre += difference; centreN += 1 }
-            if r > 0.76 && r < 0.90 { shoulder += difference; shoulderN += 1 }
+            if r < 0.70 { centre += difference; centreN += 1 }
+            if r > 0.78 && r < 0.90 { shoulder += difference; shoulderN += 1 }
             if r > 0.94 && r < 0.995 { edge += difference; edgeN += 1 }
         } }
         precondition(centre / centreN < 1, "refraction disturbed the clear centre")
         precondition(edge / edgeN > 0.1, "outer glass did not refract image pixels")
         print("PASS clear centre preserves detail; outer glass refracts the grid (mean difference \(edge / edgeN))")
-        precondition(shoulder / shoulderN < 0.1, "refraction bends the photograph before the narrow glass rim")
-        print("PASS inner 90 percent retains straight source geometry")
+        precondition(shoulder / shoulderN > 0.2, "glass shoulder lacks a gradual change in local magnification")
+        print("PASS clear centre transitions into visible shoulder curvature")
         func fadedGlass(_ strength: CGFloat) -> [UInt8] {
             let photo = LoupeScenePhoto(preview: preview, center: CGPoint(x: 300, y: 300),
                 imageSize: CGSize(width: 600, height: 600))
@@ -58,9 +58,9 @@ struct LoupeChecks {
                 diameter: 260, magnification: 2.5, displayScale: 2, transmission: 1, flare: 0, brightness: 1,
                 refractionScale: strength)!)
         }
-        precondition(fadedGlass(0) == a, "immersed photograph retains glass distortion")
-        print("PASS full immersion removes refraction from actual source pixels")
-        let half = fadedGlass(0.5)
+        precondition(fadedGlass(0) == a, "disabled refraction changes source pixels")
+        print("PASS explicit zero-strength fallback preserves actual source pixels")
+        let half = fadedGlass(0.45)
         var fullDifference = 0.0, halfDifference = 0.0
         for y in 0..<520 { for x in 0..<520 {
             let r = hypot(Double(x) - 260, Double(y) - 260) / 260
@@ -98,7 +98,7 @@ struct LoupeChecks {
             precondition(step >= -1 && step <= 3, "rim contains a radial fold or sampling seam")
             largestShift = max(largestShift, abs(Int(glassRamp[i]) - Int(straightRamp[i])))
         }
-        precondition(largestShift <= 2, "edge refraction is absent or excessive")
+        precondition(largestShift >= 1 && largestShift <= 5, "edge refraction is absent or excessive")
         print("PASS radial sampling stays continuous, monotonic and bounded (ramp shift \(largestShift))")
         var rimShifts = [Int]()
         for diameter: CGFloat in [260, 780] {
@@ -112,11 +112,14 @@ struct LoupeChecks {
                     }
                     let plain = pixels(scaledRamp(false)), bent = pixels(scaledRamp(true))
                     let width = Int(diameter * scale), radius = width / 2
-                    let x = Int(Double(radius) * 1.97)
-                    let i = (radius * width + x) * 4
-                    return abs(Int(plain[i]) - Int(bent[i]))
+                    // Subpixel movement can quantize to zero at one 8-bit
+                    // sample. Compare the rim band at every display scale.
+                    return (Int(Double(radius) * 1.90)..<Int(Double(radius) * 1.995)).map { x in
+                        let i = (radius * width + x) * 4
+                        return abs(Int(plain[i]) - Int(bent[i]))
+                    }.max() ?? 0
                 }
-                precondition(shift <= 2, "glass curvature grows excessively at diameter \(diameter), scale \(scale)")
+                precondition(shift >= 1 && shift <= 5, "glass curvature sample shift \(shift) at diameter \(diameter), scale \(scale)")
                 rimShifts.append(shift)
             }
         }
@@ -129,6 +132,34 @@ struct LoupeChecks {
             return PhotoPreview(source: image, lit: image, dark: image, flare: image)
         }
         let red = solid(0.9, 0.05, 0.05), blue = solid(0.05, 0.05, 0.9)
+        let cropPhotos = [
+            LoupeScenePhoto(preview: blue, center: CGPoint(x: 300, y: 300), imageSize: CGSize(width: 2000, height: 2000)),
+            LoupeScenePhoto(preview: red, center: CGPoint(x: 660.5, y: 300), imageSize: CGSize(width: 2, height: 100))
+        ]
+        for scale: CGFloat in [1, 2] {
+            for strength: CGFloat in [0.45, 1] {
+                let region = CGRect(x: 755, y: 376, width: 25, height: 28)
+                func cropRender(_ viewport: CGRect?) -> CGImage {
+                    LoupeRenderer.shared.render(photos: cropPhotos, point: CGPoint(x: 300, y: 300),
+                        diameter: 780, magnification: 1, displayScale: scale, transmission: 1,
+                        flare: 0, brightness: 1, viewport: viewport, refractionScale: strength)!
+                }
+                let full = cropRender(nil)
+                let expected = pixels(full.cropping(to: CGRect(x: region.minX * scale, y: region.minY * scale,
+                    width: region.width * scale, height: region.height * scale))!)
+                let actual = pixels(cropRender(region))
+                precondition(actual.count == expected.count)
+                let difference = zip(actual, expected).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
+                precondition(Double(difference) / Double(actual.count) < 1,
+                    "cropped optical viewport lost source content or changed orientation")
+                if strength == 1 {
+                    precondition(stride(from: 0, to: actual.count, by: 4).contains {
+                        actual[$0] > 150 && actual[$0 + 2] < 100
+                    }, "cropped refraction did not include the film beyond the unwarped crop")
+                }
+            }
+        }
+        print("PASS cropped viewport matches the full lens and includes inward-refracted neighboring films")
         let left = LoupeScenePhoto(preview: red, center: CGPoint(x: 90, y: 150), imageSize: CGSize(width: 80, height: 180))
         let right = LoupeScenePhoto(preview: blue, center: CGPoint(x: 210, y: 150), imageSize: CGSize(width: 80, height: 180))
         func scene(_ photos: [LoupeScenePhoto], point: CGPoint = CGPoint(x: 150, y: 150), panel: CGRect? = nil) -> [UInt8] {
@@ -236,6 +267,6 @@ struct LoupeChecks {
         precondition(Int(illuminated(0, 1.6)[centerPixel]) > Int(illuminated(0, 1)[centerPixel]) + 20,
             "steady brightness no longer responds to the slider")
         print("PASS lens shares ignition exposure and retains steady brightness slider response")
-        print("RESULT 18 passed; 0 failed")
+        print("RESULT 19 passed; 0 failed")
     }
 }

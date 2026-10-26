@@ -67,16 +67,18 @@ final class LoupeRenderer {
     private let context = CIContext(options: [.cacheIntermediates: false,
         .workingColorSpace: CGColorSpace(name: CGColorSpace.displayP3)!])
     // A bounded, monotonic radial warp: no torus, foldover, or sampled ring.
-    // Keep the central 90% straight. The narrow lip displaces at most 0.6%
-    // of the radius, and fades as the eye passes through the lens.
+    // Keep the central 72% straight, then smoothly change the local scale.
+    // The 1.6% displacement cap keeps the radial derivative above 0.875.
+    // Keep ROI and cropped-scene coverage in step with this kernel's bound.
+    private static let maximumRefractionInset: CGFloat = 0.016
     private let edgeKernel = CIWarpKernel(source: """
         kernel vec2 loupeEdge(vec2 centre, float radius, float strength) {
             vec2 delta = destCoord() - centre;
             float distance = length(delta);
             float r = distance / radius;
-            float shoulder = smoothstep(0.90, 1.0, r);
-            float lip = smoothstep(0.97, 1.0, r);
-            float inset = radius * (0.0045 * shoulder + 0.0015 * lip) * strength;
+            float shoulder = smoothstep(0.72, 1.0, r);
+            float lip = smoothstep(0.94, 1.0, r);
+            float inset = radius * (0.014 * shoulder + 0.002 * lip) * strength;
             return centre + delta * (1.0 - inset / max(distance, 0.001));
         }
         """)
@@ -128,10 +130,15 @@ final class LoupeRenderer {
         let opticalRadius = (opticalDiameter ?? diameter) * scale / 2
         let output = CGRect(x: 0, y: 0, width: ceil(region.width * scale), height: ceil(region.height * scale))
         let factor = magnification * scale
+        let strength = refractionScale.isFinite ? min(1, max(0, refractionScale)) : 0
+        let refractionInset = refracts ? opticalRadius * Self.maximumRefractionInset * strength : 0
+        // A cropped drawable can sample toward the optical axis beyond its
+        // own rectangle. Include those films before composing the lazy graph.
+        let sourcePadding = 2 + (viewport == nil ? 0 : refractionInset / factor)
         let sourceViewport = CGRect(x: point.x + (region.minX - diameter / 2) / magnification,
                                     y: point.y + (region.minY - diameter / 2) / magnification,
                                     width: region.width / magnification, height: region.height / magnification)
-            .insetBy(dx: -2, dy: -2)
+            .insetBy(dx: -sourcePadding, dy: -sourcePadding)
         let light = min(1, max(0, transmission))
         let white = LightResponse.panelWhite(brightness: brightness, flare: flare)
         let panel = CIImage(color: CIColor(red: 0.89 * (1 - light) + white * light,
@@ -188,11 +195,11 @@ final class LoupeRenderer {
             scene = scene.cropped(to: panelRect).composited(over: black)
         }
         let glass: CIImage
-        if refracts, refractionScale > 0, let edgeKernel {
+        if refracts, strength > 0, let edgeKernel {
             glass = edgeKernel.apply(extent: output, roiCallback: { _, rect in
-                rect.insetBy(dx: -opticalRadius * 0.007, dy: -opticalRadius * 0.007)
+                rect.insetBy(dx: -refractionInset - 1, dy: -refractionInset - 1)
             }, image: scene, arguments: [CIVector(cgPoint: centre), opticalRadius,
-                                        min(1, max(0, refractionScale))]) ?? scene
+                                        strength]) ?? scene
         } else {
             glass = scene
         }

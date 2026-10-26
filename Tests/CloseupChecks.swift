@@ -38,24 +38,55 @@ private actor RasterGate {
         func check(_ condition: Bool, _ message: String) {
             precondition(condition, message); count += 1; print("PASS \(message)")
         }
-        let contact = FilmContactTexture.image!
-        check((0..<100).allSatisfy { _ in FilmContactTexture.image === contact },
-              "all loose photos reuse one contact texture without per-photo allocation")
-        check(contact.width == 96 && contact.height == 96 && contact.bytesPerRow * contact.height == 36 * 1024,
-              "contact texture pixel storage stays at 36 KiB regardless of photo count or resolution")
-        let contactData = contact.dataProvider!.data!
-        let contactBytes = CFDataGetBytePtr(contactData)!
-        var clearPhoto = true, clearOuterEdge = true, visibleSide = false
-        for y in 0..<contact.height {
-            for x in 0..<contact.width {
-                let alpha = contactBytes[y * contact.bytesPerRow + x * 4 + 3]
-                if (12..<84).contains(x) && (12..<84).contains(y) { clearPhoto = clearPhoto && alpha == 0 }
-                if x == 0 || y == 0 || x == 95 || y == 95 { clearOuterEdge = clearOuterEdge && alpha == 0 }
-                if x == 84 && y == 48 { visibleSide = alpha > 0 }
+        let contactImages = FilmContactVariant.allCases.map { FilmContactTexture.image(for: $0)! }
+        check(contactImages.reduce(0) { $0 + $1.bytesPerRow * $1.height } == 108 * 1024,
+              "three shared contact textures use 108 KiB regardless of photo count or resolution")
+        var contactPixels: [[UInt8]] = []
+        for (variant, contact) in zip(FilmContactVariant.allCases, contactImages) {
+            check((0..<100).allSatisfy { _ in FilmContactTexture.image(for: variant) === contact },
+                  "each film reuses its global contact texture without per-photo allocation")
+            check(contact.width == 96 && contact.height == 96, "contact variants keep the small fixed raster size")
+            let data = contact.dataProvider!.data!
+            let bytes = Array(UnsafeBufferPointer(start: CFDataGetBytePtr(data)!, count: CFDataGetLength(data)))
+            contactPixels.append(bytes)
+            var clearPhoto = true, clearOuterEdge = true, visibleSide = false, premultiplied = true
+            for y in 0..<contact.height {
+                for x in 0..<contact.width {
+                    let index = y * contact.bytesPerRow + x * 4
+                    let alpha = bytes[index + 3]
+                    if (12..<84).contains(x) && (12..<84).contains(y) {
+                        clearPhoto = clearPhoto && bytes[index...index + 3].allSatisfy { $0 == 0 }
+                    }
+                    if x == 0 || y == 0 || x == 95 || y == 95 { clearOuterEdge = clearOuterEdge && alpha == 0 }
+                    if x == 84 && y == 48 { visibleSide = alpha > 0 }
+                    premultiplied = premultiplied && bytes[index...index + 2].allSatisfy { $0 <= alpha }
+                }
+            }
+            check(clearPhoto, "every contact variant leaves all photograph pixels transparent and uncropped")
+            check(clearOuterEdge && visibleSide, "thin sides remain visible and shadows fade before the texture boundary")
+            check(premultiplied, "edge blending has valid premultiplied color without bright fringes")
+        }
+        check(contactPixels[0] != contactPixels[1] && contactPixels[0] != contactPixels[2] && contactPixels[1] != contactPixels[2],
+              "flat, left-curl and right-curl films have distinct contact shapes")
+        var leftLocalized = true, rightLocalized = true
+        let capPixels = Int(FilmContactTexture.cap * FilmContactTexture.scale)
+        for y in 0..<96 {
+            for x in 0..<96 {
+                let i = (y * 96 + x) * 4
+                if x >= capPixels || y < 96 - capPixels {
+                    leftLocalized = leftLocalized && contactPixels[0][i...i + 3] == contactPixels[1][i...i + 3]
+                }
+                if x < 96 - capPixels || y < 96 - capPixels {
+                    rightLocalized = rightLocalized && contactPixels[0][i...i + 3] == contactPixels[2][i...i + 3]
+                }
             }
         }
-        check(clearPhoto, "film contact decoration never covers or crops photo pixels")
-        check(clearOuterEdge && visibleSide, "thin side is visible and contact shadow fades before texture boundary")
+        check(leftLocalized && rightLocalized, "curl differences stay inside fixed corner caps rather than stretching along the photograph")
+        let contactIDs = (0..<100).map { UUID(uuidString: String(format: "00000000-0000-0000-0000-%012X", $0))! }
+        let shapes = contactIDs.map(FilmContactVariant.forFilm)
+        check(Set(shapes.map(\.rawValue)).count == 3, "saved placements distribute across all three contact shapes")
+        check(zip(contactIDs, shapes).allSatisfy { FilmContactVariant.forFilm(UUID(uuidString: $0.0.uuidString)!) == $0.1 },
+              "restoring persisted film identifiers preserves their contact shapes")
         let point = CGPoint(x: 400, y: 300)
         let board = CGSize(width: 1000, height: 700)
         let original = LoupeRenderer.sourceViewport(point: point, diameter: LoupeGeometry.diameter,
@@ -215,6 +246,19 @@ private actor RasterGate {
             check(coveredClip, "focal switching never shrinks the source below the lens clip at \(Int(window.width))pt")
         }
         let blendScene = LoupeSceneInput(photos: [], point: point, panelBounds: nil, transmission: 1, flare: 0, brightness: 1)
+        for mode in LoupeCloseMagnification.allCases {
+            var previousStrength: CGFloat = 1
+            var smooth = true
+            for tick in 0...100 {
+                let sample = LoupeSampling(in: board, closeViewing: true, mode: mode, progress: CGFloat(tick) / 100)
+                let input = sample.input(scene: blendScene, displayScale: 2)
+                smooth = smooth && input.refractionScale >= 0.45 - 1e-8 && input.refractionScale <= previousStrength
+                    && previousStrength - input.refractionScale < 0.02 && input.scene.point == point
+                previousStrength = input.refractionScale
+            }
+            check(smooth && abs(previousStrength - 0.45) < 1e-8,
+                  "\(mode) keeps continuous restrained refraction and the same source point during approach")
+        }
         var approach = LoupeApproach(scene: blendScene, origin: point, size: board, magnificationBlend: 1,
                                      closeViewing: true, displayScale: 2, progress: 1)
         approach.animatableData = AnimatablePair(0.7, 0.38)
@@ -522,8 +566,8 @@ private actor RasterGate {
         let reducedB = LoupeGlassPose(origin: CGPoint(x: 900, y: 700), size: board, progress: 0, reduceMotion: true)
         check(reducedA == reducedB, "reduced motion holds glass reflections still")
         let closeGlass = LoupeGlassPose(origin: CGPoint(x: 80, y: 200), size: board, progress: 1, reduceMotion: false)
-        check(closeGlass.intensity == 0 && leftGlass.intensity == 1,
-              "restrained glass reflections fade without increasing the field magnification")
+        check(abs(closeGlass.intensity - 0.45) < 1e-8 && leftGlass.intensity == 1 && closeGlass.rimIntensity == 0,
+              "close viewing retains subdued glass while the housing fades without changing magnification")
         let invalidGlass = LoupeGlassPose(origin: CGPoint(x: CGFloat.nan, y: CGFloat.infinity), size: .zero,
                                           progress: CGFloat.nan, reduceMotion: false)
         check(invalidGlass.angle.isFinite && invalidGlass.intensity.isFinite,
@@ -564,8 +608,8 @@ private actor RasterGate {
         check(centreAlpha < 0.01, "glass surface leaves the central photograph fully clear")
         check(edgeAlpha > 0.03 && edgeAlpha < 0.30 && reflectionChange > 0.005,
               "production glass draws visible rim reflections that move relative to the photograph")
-        check(closeEdgeAlpha < 0.01,
-              "production glass removes the rim reflection when fully immersed")
+        check(closeEdgeAlpha > 0.015 && closeEdgeAlpha < edgeAlpha * 0.65,
+              "production close glass keeps a subdued visible reflection")
         check(darkBevel > 0.02 && darkBevel < 0.16 && brightLip > 0.03 && brightLip < 0.30,
               "production glass keeps a narrow, restrained dark bevel and bright lip")
 

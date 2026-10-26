@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var canvasFrame = CGRect.zero
     @State private var flightCursor = false
     @State private var cancelledPull = false
+    @State private var trayTabsWidth: CGFloat = 70
     @State private var flightPointer: CGPoint?
     @State private var loupe = LoupeExperience()
     @State private var slideshowTray = SlideshowTraySnapshot()
@@ -42,6 +43,7 @@ struct ContentView: View {
                         TableCanvas(model: model, loupe: loupe, liftedPhoto: flight?.photo.url,
                                     guideBlocked: model.isPreparingStartup || featureGuide.isWelcome(in: guideWindowID),
                                     guideExclusion: guideStep == nil ? nil : guideBounds.offsetBy(dx: -canvasFrame.minX, dy: -canvasFrame.minY))
+                            .featureGuideTarget(.viewingArea)
                             .background(GeometryReader { proxy in
                                 Color.clear.preference(key: WorkbenchFrameKey.self, value: proxy.frame(in: .named("workbench")))
                             })
@@ -141,6 +143,11 @@ struct ContentView: View {
             await prepareSlideshow(run)
         }
         .onChange(of: model.loupeEnabled) { _, enabled in if !enabled { loupe.cancel() } }
+        .onChange(of: model.activeTrayID) { _, _ in
+            flight = nil; flightPointer = nil; cancelledPull = false; releaseFlightCursor()
+            entryPreparationID = nil
+            slideshowTray = SlideshowTraySnapshot()
+        }
         .onChange(of: model.slideshowMode) { _, active in
             if active { featureGuide.finish(in: guideWindowID) }
             loupe.cancel()
@@ -189,8 +196,9 @@ struct ContentView: View {
     private var tools: some View {
         HStack(spacing: 9) {
             HStack(spacing: 2) {
-                tool("arrow.up.and.down.and.arrow.left.and.right", "普通指针（A）；⌘点选多张，Shift拖动框选，Delete移出台面", active: !model.loupeEnabled) { model.loupeEnabled = false }
+                tool("arrow.up.and.down.and.arrow.left.and.right", "普通指针（A）；⌘点选多张，Shift拖动框选，Delete收回底栏", active: !model.loupeEnabled) { model.loupeEnabled = false }
                 tool("viewfinder.circle", "放大镜（V）；按住空格凑近，松开退回；Tab切换倍率", active: model.loupeEnabled) { model.loupeEnabled.toggle() }
+                    .featureGuideTarget(.loupe)
             }.padding(4).background(TableStyle.chrome, in: Capsule())
                 .featureGuideTarget(.tools)
             if model.loupeEnabled {
@@ -252,26 +260,32 @@ struct ContentView: View {
     }
 
     private var tray: some View {
+        let photos = model.trayPhotos
         let ink = Color(white: 0.92)
         let secondary = Color(white: 0.66)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 Button(action: model.chooseFolder) {
-                    Label("选择文件夹", systemImage: "folder.badge.plus")
+                    Label("从文件夹导入", systemImage: "folder.badge.plus")
                         .font(.system(size: 12, weight: .medium)).padding(.horizontal, 14).frame(height: 32)
                         .foregroundStyle(.white).background(Color(white: 0.22), in: Capsule())
-                }.buttonStyle(.plain)
-                Button(action: model.choosePhotos) { Image(systemName: "plus").frame(width: 24, height: 28) }
-                    .buttonStyle(.plain).help("添加照片")
+                }.buttonStyle(.plain).fixedSize()
+                    .help("追加到当前底栏，保留已有照片")
+                    .featureGuideTarget(.trayImport)
+                trayTabs
+                    .featureGuideTarget(.trayTabs)
+                Button { model.newTray() } label: { Image(systemName: "plus").frame(width: 24, height: 28) }
+                    .buttonStyle(.plain).help("新建底栏").accessibilityLabel("新建底栏")
                 Button(action: model.placeAllPhotos) {
                     Label("一键平铺", systemImage: "square.grid.3x3")
                         .font(.system(size: 12, weight: .medium)).padding(.horizontal, 14).frame(height: 32)
                         .foregroundStyle(.white).background(Color(white: 0.22), in: Capsule())
                 }.buttonStyle(.plain)
-                .help("将所有照片自动摆放到台面")
+                .fixedSize()
+                .help("将当前底栏照片重新平铺到台面")
                 .disabled(model.photos.isEmpty)
-                Text(model.sourceLabel).font(.system(size: 11)).lineLimit(1)
-                Text("\(model.photos.count) 张").font(.system(size: 10, design: .monospaced)).foregroundStyle(secondary)
+                Text("余 \(photos.count) / \(model.photos.count) 张").font(.system(size: 10, design: .monospaced)).foregroundStyle(secondary)
+                    .fixedSize()
                 if model.isImporting { ProgressView().controlSize(.small) }
                 Spacer()
                 Button { model.albumEditorPresented = true } label: {
@@ -279,17 +293,17 @@ struct ContentView: View {
                         .background(Color.white.opacity(0.08), in: Capsule())
                 }.buttonStyle(.plain)
             }
-            if model.photos.isEmpty && model.albums.isEmpty {
+            if photos.isEmpty && model.albums.isEmpty {
                 HStack {
                     Image(systemName: "photo.on.rectangle.angled")
-                    Text("选择一个照片文件夹，或把照片、文件夹拖到这里。")
+                    Text(model.photos.isEmpty ? "从文件夹导入照片，或把照片、文件夹拖到这里。" : "照片都在台面上，选中后按 Delete 收回原底栏。")
                 }.font(.system(size: 12)).foregroundStyle(secondary)
                     .frame(maxWidth: .infinity, minHeight: 88)
             } else {
                 ScrollView(.horizontal, showsIndicators: true) {
                     LazyHStack(alignment: .top, spacing: 0) {
                         ForEach(model.albums) { page in AlbumTrayCard(page: page, model: model) }
-                        ForEach(model.photos) { photo in
+                        ForEach(photos) { photo in
                             TrayPhoto(photo: photo, model: model, lifted: flight?.photo.url == photo.url,
                                       onPull: pullFromSleeve, onRelease: releaseFromSleeve, onTrackingEnded: {
                                           returnToSleeve(); cancelledPull = false
@@ -301,7 +315,7 @@ struct ContentView: View {
                                 }
                         }
                     }.padding(.bottom, 3)
-                }.frame(height: 88)
+                }.frame(height: 88).id(model.activeTrayID)
                 .transformAnchorPreference(key: SlideshowTrayAnchorsKey.self, value: .bounds) { value, anchor in
                     value.viewport = anchor
                 }
@@ -313,6 +327,47 @@ struct ContentView: View {
         .onDrop(of: PhotoDrag.acceptedTypes, isTargeted: nil) { model.accept($0, at: nil, board: nil) }
     }
 
+    private var trayTabs: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(model.trays) { tray in
+                        let selected = tray.id == model.activeTrayID
+                        Button { model.selectTrayForDeletion(tray.id) } label: {
+                            Text(tray.name).font(.system(size: 11, weight: selected ? .semibold : .regular))
+                                .lineLimit(1).frame(maxWidth: 120)
+                                .padding(.horizontal, 10).frame(height: 28)
+                                .foregroundStyle(selected ? Color.white : Color(white: 0.72))
+                                .background(selected ? Color(white: 0.22) : Color.clear, in: Capsule())
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(model.selectedTrayForDeletion == tray.id ? 0.5 : 0), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain).id(tray.id)
+                        .help("\(tray.name) · \(tray.urls.count) 张；点选后按 Delete 删除底栏")
+                        .accessibilityLabel("\(tray.name)，\(tray.urls.count) 张照片")
+                        .accessibilityHint("点选后按 Delete 删除底栏")
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                    }
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: TrayTabsWidthKey.self, value: geometry.size.width)
+                    }
+                }
+            }
+            .onPreferenceChange(TrayTabsWidthKey.self) { width in
+                guard width.isFinite, width > 0, abs(width - trayTabsWidth) > 0.5 else { return }
+                trayTabsWidth = width
+            }
+            .onAppear { proxy.scrollTo(model.activeTrayID, anchor: .trailing) }
+            .onChange(of: model.activeTrayID) { _, id in proxy.scrollTo(id, anchor: .trailing) }
+            .onChange(of: trayTabsWidth) { _, _ in proxy.scrollTo(model.activeTrayID, anchor: .trailing) }
+        }
+        // Fit the actual labels first; only scroll once the existing cap is reached.
+        // The +, arrange and count controls move right as new trays are added.
+        .frame(width: min(trayTabsWidth, 280), height: 32)
+    }
+
     private var boardFrame: CGRect {
         CGRect(x: canvasFrame.minX, y: canvasFrame.minY + 64,
                width: model.boardSize.width, height: model.boardSize.height)
@@ -320,7 +375,7 @@ struct ContentView: View {
 
     private func startSlideshow() {
         guard !model.photos.isEmpty, !model.slideshowMode, entryPreparationID == nil else { return }
-        if reduceMotion {
+        if reduceMotion || model.trayPhotos.isEmpty {
             entryComplete = true
             model.enterSlideshow()
         } else {
@@ -331,6 +386,11 @@ struct ContentView: View {
     @MainActor private func prepareSlideshow(_ run: UUID) async {
         defer { if entryPreparationID == run { entryPreparationID = nil } }
         do {
+            if model.trayPhotos.isEmpty {
+                entryComplete = true
+                model.enterSlideshow()
+                return
+            }
             // A click can arrive before LazyHStack has published its first anchors.
             for _ in 0..<8 {
                 guard entryPreparationID == run, !Task.isCancelled else { return }
@@ -363,7 +423,7 @@ struct ContentView: View {
     }
 
     private var visibleSlideshowPhotos: [SlideshowTrayPhotoSnapshot] {
-        let urls = Set(model.photos.map(\.url))
+        let urls = Set(model.trayPhotos.map(\.url))
         guard slideshowTray.viewport.width > 1, slideshowTray.viewport.height > 1 else { return [] }
         return slideshowTray.photos.values.filter {
             let visible = $0.frame.intersection(slideshowTray.viewport)
@@ -450,14 +510,13 @@ private struct TrayPhoto: View {
     var onPull: (Photo, CGImage, CGRect, DragGesture.Value) -> Void
     var onRelease: (DragGesture.Value) -> Void
     var onTrackingEnded: () -> Void
-    private var onTable: Bool { model.layout.slides.contains { $0.url == photo.url } }
     @State private var image: CGImage?
     @State private var loaded = false
     @State private var hovered = false
     @GestureState private var pulling = false
     var body: some View {
         VStack(spacing: 5) {
-            FilmSleeve(image: image, failed: loaded && image == nil, onTable: onTable, highlighted: hovered, lifted: lifted)
+            FilmSleeve(image: image, failed: loaded && image == nil, highlighted: hovered, lifted: lifted)
                 .anchorPreference(key: SlideshowTrayAnchorsKey.self, value: .bounds) {
                     SlideshowTrayAnchors(photos: [photo.url: SlideshowTrayPhotoAnchor(bounds: $0, image: image)])
                 }
@@ -478,7 +537,7 @@ private struct TrayPhoto: View {
         .onChange(of: model.thumbnails[photo.url] != nil) { _, available in
             if available, image == nil { image = model.thumbnails[photo.url] }
         }
-        .accessibilityLabel(photo.name + (onTable ? "，已在灯板上" : "，可拖到灯板"))
+        .accessibilityLabel(photo.name + "，可拖到灯板")
         .task(id: photo.url) {
             image = model.thumbnails[photo.url] ?? PhotoThumbnailCache.cached(photo.url)
             if image == nil { image = await PhotoThumbnails.shared.thumbnail(photo.url) }
@@ -591,8 +650,8 @@ struct TableCanvas: View {
                 if !model.loupeEnabled && model.selectedIDs.count > 1 {
                     HStack(spacing: 12) {
                         Text("已选 \(model.selectedIDs.count) 项").monospacedDigit()
-                        Button(action: model.removeSelected) { Label("移出台面", systemImage: "trash") }
-                            .buttonStyle(.plain).help("Delete；底栏照片与原文件保留")
+                        Button(action: model.removeSelected) { Label("收回底栏", systemImage: "arrow.down.to.line") }
+                            .buttonStyle(.plain).help("Delete；收回原底栏，保留原文件")
                         Button { model.setSelection([]) } label: { Image(systemName: "xmark") }
                             .buttonStyle(.plain).accessibilityLabel("取消选择")
                     }
@@ -826,7 +885,8 @@ private struct SlideView: View {
         }
         .frame(width: width, height: width / aspect)
         .background {
-            FilmContactSurface(size: imageSize, zoom: model.zoom).equatable()
+            FilmContactSurface(size: imageSize, zoom: model.zoom,
+                               variant: FilmContactVariant.forFilm(slide.id)).equatable()
         }
         .overlay(Rectangle().stroke(showsSelection ? Color.accentColor : Color.clear, lineWidth: 2))
         .overlay(alignment: .bottomTrailing) {
@@ -892,7 +952,7 @@ private struct SlideView: View {
         .simultaneousGesture(RotationGesture().updating($rotation) { value, state, _ in state = value }
             .onEnded { value in commit { $0.angle += value.degrees } })
         .contextMenu {
-            Button(selected && model.selectedIDs.count > 1 ? "移出所选 \(model.selectedIDs.count) 项" : "移出台面") {
+            Button(selected && model.selectedIDs.count > 1 ? "收回所选 \(model.selectedIDs.count) 项到底栏" : "收回底栏") {
                 if !selected { model.select(slide.id) }; model.removeSelected()
             }
             Button("摆正") { model.update(slide.id) { $0.angle = 0 } }
@@ -1043,9 +1103,9 @@ struct OpticalLoupe: View {
         }
         .overlay {
             Circle().fill(RadialGradient(stops: [
-                .init(color: .clear, location: 0.94),
-                .init(color: .black.opacity(0.008), location: 0.98),
-                .init(color: .black.opacity(0.035), location: 1)
+                .init(color: .clear, location: 0.90),
+                .init(color: .black.opacity(0.012), location: 0.97),
+                .init(color: .black.opacity(0.045), location: 1)
             ], center: .center, startRadius: 0, endRadius: apertureDiameter / 2))
                 .frame(width: apertureDiameter, height: apertureDiameter).position(center)
                 .opacity(glass.intensity)
@@ -1056,6 +1116,13 @@ struct OpticalLoupe: View {
         }
         .clipped()
         .accessibilityLabel("观片放大镜")
+    }
+}
+
+private struct TrayTabsWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

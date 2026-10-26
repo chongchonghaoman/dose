@@ -215,6 +215,7 @@ struct LoupeSampling {
     let diameter: CGFloat
     let magnification: CGFloat
     let contentScale: CGFloat
+    let refractionScale: CGFloat
 
     init(in size: CGSize, closeViewing: Bool, mode: LoupeCloseMagnification, progress: CGFloat) {
         self.init(in: size, closeViewing: closeViewing,
@@ -236,10 +237,12 @@ struct LoupeSampling {
         let originalRelativeScale = originalDepth.scale / originalDepth.apertureScale
         contentScale = blend == 0 ? originalRelativeScale : (blend == 1 ? 1 : 1 + (originalRelativeScale - 1) * (1 - blend))
         magnification = LoupeGeometry.magnification(for: diameter) * (relativeScale / contentScale)
+        refractionScale = 1 - 0.55 * LoupeGeometry.ease(progress)
     }
 
     func input(scene: LoupeSceneInput, displayScale: CGFloat) -> LoupeDisplayInput {
-        LoupeDisplayInput(scene: scene, diameter: diameter, magnification: magnification, displayScale: displayScale)
+        LoupeDisplayInput(scene: scene, diameter: diameter, magnification: magnification,
+                         displayScale: displayScale, refractionScale: refractionScale)
     }
 }
 
@@ -293,7 +296,7 @@ struct LoupeApproach: View, Animatable {
                 .frame(width: LoupeGeometry.diameter * depth.apertureScale,
                        height: LoupeGeometry.diameter * depth.apertureScale)
                 .position(front)
-                .opacity(glass.intensity)
+                .opacity(glass.rimIntensity)
             Circle().strokeBorder(.white.opacity(0.10 * (1 - progress)), lineWidth: 1)
                 .frame(width: LoupeGeometry.diameter * depth.apertureScale - 2,
                        height: LoupeGeometry.diameter * depth.apertureScale - 2)
@@ -322,7 +325,9 @@ struct LoupeGlassPose: Equatable {
         approach = LoupeGeometry.ease(progress)
     }
     var angle: Double { Double(x * 14 + y * 8) }
-    var intensity: Double { 1 - Double(approach) }
+    // The housing recedes while the glass keeps a restrained surface reflection.
+    var rimIntensity: Double { 1 - Double(approach) }
+    var intensity: Double { 0.45 + 0.55 * rimIntensity }
 }
 
 /// A dark inner bevel and bright outer lip give the clear glass a visible cross-section.
@@ -335,11 +340,11 @@ struct LoupeGlassSurface: View {
             ZStack {
                 Circle().fill(RadialGradient(stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .clear, location: 0.972),
-                    .init(color: .black.opacity(0.05), location: 0.981),
-                    .init(color: .black.opacity(0.08), location: 0.987),
-                    .init(color: .white.opacity(0.06), location: 0.992),
-                    .init(color: .white.opacity(0.18), location: 0.997),
+                    .init(color: .clear, location: 0.952),
+                    .init(color: .black.opacity(0.035), location: 0.968),
+                    .init(color: .black.opacity(0.10), location: 0.982),
+                    .init(color: .white.opacity(0.055), location: 0.990),
+                    .init(color: .white.opacity(0.19), location: 0.996),
                     .init(color: .clear, location: 1)
                 ], center: .center, startRadius: 0, endRadius: radius))
                 Circle().fill(AngularGradient(stops: [
@@ -355,11 +360,11 @@ struct LoupeGlassSurface: View {
                    angle: .degrees(pose.angle)))
                 .mask(Circle().fill(RadialGradient(stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .clear, location: 0.90),
-                    .init(color: .white.opacity(0.05), location: 0.94),
-                    .init(color: .white.opacity(0.22), location: 0.97),
-                    .init(color: .white.opacity(0.60), location: 0.987),
-                    .init(color: .white.opacity(0.45), location: 0.995),
+                    .init(color: .clear, location: 0.84),
+                    .init(color: .white.opacity(0.035), location: 0.90),
+                    .init(color: .white.opacity(0.20), location: 0.95),
+                    .init(color: .white.opacity(0.55), location: 0.982),
+                    .init(color: .white.opacity(0.40), location: 0.995),
                     .init(color: .clear, location: 1)
                 ], center: .center, startRadius: 0, endRadius: radius)))
                 Circle().inset(by: 1.5).trim(from: 0.53, to: 0.72)

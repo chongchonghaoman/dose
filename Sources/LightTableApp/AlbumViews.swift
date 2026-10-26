@@ -282,7 +282,7 @@ struct AlbumEditor: View {
             Text(selectedPocket == nil ? "点照片装入下一个空袋格" : "点照片替换当前袋格").font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(model.photos) { photo in
+                    ForEach(model.allPhotos) { photo in
                         Button { assign(photo.url) } label: { AlbumLibraryPhoto(photo: photo, model: model) }
                             .buttonStyle(.plain).onDrag { PhotoDrag.provider(for: photo) }.help(photo.name)
                     }
@@ -322,7 +322,7 @@ struct AlbumEditor: View {
                         .onDrop(of: [PhotoDrag.contentType], isTargeted: nil) { providers in
                             guard let provider = providers.first else { return false }
                             Task {
-                                if let url = await PhotoDrag.sourceURL(from: provider), model.photos.contains(where: { $0.url == url }) {
+                                if let url = await PhotoDrag.sourceURL(from: provider), model.allPhotos.contains(where: { $0.url == url }) {
                                     model.updateAlbum(page.id) { $0.setPhoto(url, in: pocket.id) }; selectedPocket = pocket.id
                                 }
                             }; return true

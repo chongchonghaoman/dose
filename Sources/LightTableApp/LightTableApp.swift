@@ -14,7 +14,10 @@ struct LightTableApp: App {
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.flushSave() }
                 .onDisappear { model.flushSave() }
-                .onOpenURL { url in Task { await model.importURLs([url]) } }
+                .onOpenURL { url in
+                    let trayID = model.activeTrayID
+                    Task { await model.importURLs([url], into: trayID) }
+                }
         }
         .defaultSize(width: 1180, height: 900)
         .windowStyle(.hiddenTitleBar)
@@ -30,7 +33,9 @@ struct LightTableApp: App {
                 Divider()
             }
             CommandGroup(replacing: .newItem) {
-                Button("选择照片文件夹…", action: model.chooseFolder).keyboardShortcut("o")
+                Button("从文件夹导入…", action: model.chooseFolder).keyboardShortcut("o")
+                    .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
+                Button("新建底栏") { model.newTray() }
                     .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button("添加照片…", action: model.choosePhotos).keyboardShortcut("o", modifiers: [.command, .shift])
                     .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
@@ -44,9 +49,9 @@ struct LightTableApp: App {
                     .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button("整理全局", action: model.fitToWindow).keyboardShortcut("z", modifiers: .shift)
                     .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
-                Button(model.selectedIDs.count > 1 ? "移出所选 \(model.selectedIDs.count) 项" : "移出台面", action: model.removeSelected)
+                Button(model.selectedTrayForDeletion != nil ? "删除底栏" : (model.selectedIDs.count > 1 ? "收回所选 \(model.selectedIDs.count) 项到底栏" : "收回底栏"), action: model.deleteSelection)
                     .keyboardShortcut(.delete, modifiers: [])
-                    .disabled(model.isPreparingStartup || model.slideshowMode || model.albumEditorPresented || model.selectedIDs.isEmpty || FeatureGuideState.shared.welcomeVisible)
+                    .disabled(model.isPreparingStartup || model.slideshowMode || model.albumEditorPresented || !model.canDeleteSelection || FeatureGuideState.shared.welcomeVisible)
             }
         }
     }

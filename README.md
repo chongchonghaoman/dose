@@ -6,6 +6,8 @@
 
 A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
 
+v0.1.73 新增多底栏、取片与收回、整栏删除，改进镜片和薄片质感，并提供六步操作指引。完整内容见 [更新说明](docs/releases/v0.1.73.md)。
+
 ## 下载与运行
 
 - 系统要求：**macOS 14 或更新版本**。
@@ -14,13 +16,13 @@ A local macOS light table and slide projector for viewing photographs, with in-a
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-当前版本 **[v0.1.72](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.72)** 新增胶片厚度、启动准备卡片及按显示尺寸加载的台面预览，修复拖动蓝框，并加强每次启动的更新检查。
+当前版本 **[v0.1.73](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.73)**：从底栏取到台面的照片会从底栏隐藏，按 Delete 收回原栏；选中底栏标签按 Delete 可删除整栏及其台面散片，磁盘原图保留。
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.72/LightTable-v0.1.72-macOS-arm64.zip)**
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.73/LightTable-v0.1.73-macOS-arm64.zip)**
 
 从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
 
-**v0.1.72** 重启先准备台面高清预览，再进入观片；空台面直接进入，读取失败可重试。整理全局快捷键改为 **⇧Z**。薄片侧沿使用共用静态材质，普通拖动不再闪蓝框。完整内容见[更新说明](docs/releases/v0.1.72.md)。
+重启先准备台面高清预览，再进入观片；空台面直接进入，读取失败可重试。整理全局快捷键为 **⇧Z**。多底栏及取片收回的用法见[操作指引](docs/本次更新操作指引-v0.1.73.md)。
 
 ## 应用内更新
 
@@ -32,13 +34,14 @@ A local macOS light table and slide projector for viewing photographs, with in-a
 
 ## 新功能指引
 
-首次打开v0.1.72时显示本次更新卡片，介绍胶片厚度、启动准备和⇧Z；可直接开始观片，或选择「看看怎么用」。三步提示可跳过，同版本只自动展示一次。菜单「帮助 → 本次更新…」可以重看，指引不会自动改变照片或台面布局。
+首次打开v0.1.73时显示本次更新卡片；可直接开始观片，或选择「看看怎么用」。六步提示依次介绍导入与分栏、取片与原栏收回、删除整栏、选择放大镜、空格凑近和倍率切换，可跳过或回退。看过早期0.1.73测试说明的用户也会收到新增内容，本次内容仅自动展示一次。菜单「帮助 → 本次更新…」可以重看，指引不会自动改变照片或台面布局。
 
 ## 功能
 
-- 导入照片或文件夹，包含子文件夹；图片解码能力取决于 macOS。
-- 从底栏拖片到台面，自由移动、旋转、缩放；平移和缩放整个观片区域。
-- 「一键平铺」将图库中的照片重新摆放到台面；**会清空当前散片布局并重新排列**。
+- 导入照片或文件夹，包含子文件夹，追加到当前底栏；➕新建底栏，点击标签切换。
+- 从底栏拖片到台面后底栏隐藏该片；自由移动、旋转、缩放，Delete收回原底栏、原顺序。
+- 点击底栏标签后按Delete，移除该栏及它已上台的散片，磁盘原图保留。
+- 「一键平铺」将当前底栏的照片重新摆放到台面；**会清空当前散片布局并重新排列**。
 - 开关灯与亮度调整，带短暂过曝回落效果。
 - 普通放大镜1.5×；按住空格凑近，可选随窗口适配的原倍率或固定8×，松开退回。
 - 胶片袋式相册页与整页摆放。
@@ -48,18 +51,18 @@ A local macOS light table and slide projector for viewing photographs, with in-a
 
 ## 使用
 
-1. 点击「选择文件夹」或「添加照片」，也可以把照片、文件夹拖入底栏。
+1. 点击「从文件夹导入」或「添加照片」，也可以把照片、文件夹拖入当前底栏；点击➕新建底栏。
 2. 将照片拖到台面，或点击「一键平铺」放置全部照片。
-3. 开灯观看，通过亮度滑杆调整灯箱；选中照片后可旋转、缩放或移出台面。
+3. 开灯观看，通过亮度滑杆调整灯箱；选中照片后可旋转、缩放，按Delete或右键「收回底栏」放回原栏。选中底栏标签后按Delete会移除整栏及其台面散片。
 4. 切换到放大镜，其右侧会出现「原倍率 / 8×」胶囊；点击、拖动或按Tab切换倍率，用鼠标移动取景，按住空格凑近观察。凑近时也可按Tab切换；切回普通指针时隐藏倍率控件。
 5. 点击幻灯片按钮进入全屏；按 **↓ / →** 看下一张，按 **↑ / ←** 返回上一张。
 6. 点击「返回观片台」或按 **Esc** 退出幻灯，回到原来的台面。
 
-台面清空或移除照片只改变布局，不删除原文件。照片仍从原路径读取，请保留导入文件的位置。
+收回照片和删除底栏都不会删除磁盘原图。照片仍从原路径读取，请保留导入文件的位置。
 
 | 快捷键 | 操作 |
 | --- | --- |
-| ⌘O | 选择照片文件夹 |
+| ⌘O | 从文件夹追加导入当前底栏 |
 | ⇧⌘O | 添加照片 |
 | ⌘L | 开灯 / 关灯 |
 | A / V | 普通指针 / 放大镜 |
@@ -67,7 +70,7 @@ A local macOS light table and slide projector for viewing photographs, with in-a
 | 按住空格 | 凑近观察；松开退回 |
 | ⇧Z | 整理台面并回到全局 |
 | ⌘点选 / Shift拖动 | 多选 / 框选台面照片 |
-| Delete | 将选中照片批量移出台面 |
+| Delete | 收回选中照片；选中底栏标签时删除整栏及其台面散片 |
 | ↓ / →、↑ / ← | 幻灯模式下下一张、上一张 |
 | Esc | 退出幻灯模式 |
 
@@ -109,6 +112,8 @@ bash scripts/check-optics.sh
 bash scripts/check-slideshow.sh
 bash scripts/check-updates.sh
 bash scripts/check-feature-guide.sh
+bash scripts/check-trays.sh
+bash scripts/check-tray-return.sh
 ```
 
 它们覆盖布局、拖放、灯光、镜片、相册与幻灯状态等逻辑。图形相关检查需要能够使用 macOS 图形框架的环境；检查通过不等于所有设备上的动画流畅度已经实测。

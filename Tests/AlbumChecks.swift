@@ -94,7 +94,7 @@ import LightTableCore
         let restored = TableModel(storageURL: saved)
         check(restored.albums == model.albums && restored.layout == model.layout && restored.tableIDs == model.tableIDs,
               "pages, individual films, and stacking survive relaunch")
-        check(restored.photos.contains { $0.url == photo }, "page-only photo references remain available in the library")
+        check(restored.allPhotos.contains { $0.url == photo }, "page-only photo references remain available in the shared album library")
         var old: [String: Any] = try JSONSerialization.jsonObject(with: Data(contentsOf: saved)) as! [String: Any]
         old.removeValue(forKey: "albums"); old.removeValue(forKey: "tableOrder")
         let legacy = root.appendingPathComponent("legacy.json")

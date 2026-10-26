@@ -1,12 +1,34 @@
 import Foundation
 import Observation
 
+enum FeatureGuideTarget: Hashable {
+    case tools, magnification, removal, overview, loupe, viewingArea, trayImport, trayTabs
+
+    static func releaseTour(step: Int, loupeEnabled: Bool) -> Self {
+        switch step {
+        case 0: return .trayImport
+        case 1: return .viewingArea
+        case 2: return .trayTabs
+        default: break
+        }
+        guard loupeEnabled else { return .loupe }
+        switch step {
+        case 4: return .viewingArea
+        case 5: return .magnification
+        default: return .loupe
+        }
+    }
+}
+
 /// The guide catalog is authored per release; builds without a matching catalog stay quiet.
 @MainActor @Observable
 final class FeatureGuideState {
     static let shared = FeatureGuideState()
-    static let releaseVersion = "0.1.72"
+    static let releaseVersion = "0.1.73"
     static let seenKey = "featureGuide.presentedVersions"
+    static let seenRevisionKey = "featureGuide.presentedRevisions"
+    static let contentRevision = "trays-1"
+    static let tourStepCount = 6
 
     enum Phase: Equatable {
         case idle
@@ -27,7 +49,10 @@ final class FeatureGuideState {
 
     var available: Bool { version == Self.releaseVersion }
     var welcomeVisible: Bool { phase == .welcome }
-    var hasBeenPresented: Bool { (defaults.stringArray(forKey: Self.seenKey) ?? []).contains(version) }
+    private var presentationID: String { "\(version).\(Self.contentRevision)" }
+    var hasBeenPresented: Bool {
+        (defaults.stringArray(forKey: Self.seenRevisionKey) ?? []).contains(presentationID)
+    }
 
     func isWelcome(in window: UUID) -> Bool { owner == window && phase == .welcome }
     func step(in window: UUID) -> Int? {
@@ -53,6 +78,9 @@ final class FeatureGuideState {
         var versions = defaults.stringArray(forKey: Self.seenKey) ?? []
         if !versions.contains(version) { versions.append(version) }
         defaults.set(versions, forKey: Self.seenKey)
+        var revisions = defaults.stringArray(forKey: Self.seenRevisionKey) ?? []
+        if !revisions.contains(presentationID) { revisions.append(presentationID) }
+        defaults.set(revisions, forKey: Self.seenRevisionKey)
     }
 
     func beginTour(in window: UUID) {
@@ -62,7 +90,7 @@ final class FeatureGuideState {
 
     func advance(in window: UUID) {
         guard let step = step(in: window) else { return }
-        if step < 2 { phase = .tour(step + 1) } else { finish(in: window) }
+        if step + 1 < Self.tourStepCount { phase = .tour(step + 1) } else { finish(in: window) }
     }
 
     func previous(in window: UUID) {

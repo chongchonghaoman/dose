@@ -3,11 +3,30 @@ import SwiftUI
 import UniformTypeIdentifiers
 import LightTableCore
 
+struct PhotoTray: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var name: String
+    var urls: [URL] = []
+}
+
 @MainActor
 @Observable
 final class TableModel {
     static let defaultLampBrightness = 1.0
-    var photos: [Photo] = []
+    private(set) var trays = [PhotoTray(name: "底栏 1")]
+    private var selectedTrayID: UUID?
+    private(set) var selectedTrayForDeletion: UUID?
+    private var activeTrayIndex: Int { trays.firstIndex { $0.id == selectedTrayID } ?? 0 }
+    var activeTrayID: UUID { trays[activeTrayIndex].id }
+    // Existing tray actions read only the selected tray. The table stays shared.
+    var photos: [Photo] {
+        get { trays[activeTrayIndex].urls.map { Photo(url: $0) } }
+        set { trays[activeTrayIndex].urls = Self.uniqueURLs(newValue.map(\.url)) }
+    }
+    var allPhotos: [Photo] {
+        Self.uniqueURLs(trays.flatMap(\.urls) + layout.slides.map(\.url)
+            + albums.flatMap { $0.pockets.compactMap(\.url) }).map { Photo(url: $0) }
+    }
     var layout = TableLayout()
     var albums: [AlbumPage] = []
     var tableOrder: [UUID] = []
@@ -52,7 +71,10 @@ final class TableModel {
     private(set) var imageAspects: [URL: Double] = [:]
     var lampBrightness = TableModel.defaultLampBrightness
     let transmissionEnabled = true
-    var sourceLabel = "你的照片"
+    var sourceLabel: String {
+        get { trays[activeTrayIndex].name }
+        set { trays[activeTrayIndex].name = newValue }
+    }
     var isImporting = false
     var message: String?
     private(set) var thumbnails: [URL: CGImage] = [:]
@@ -86,7 +108,8 @@ final class TableModel {
         if restore, let storageURL, let data = try? Data(contentsOf: storageURL),
            let saved = try? JSONDecoder().decode(Saved.self, from: data) {
             var restored = saved
-            let aliases = PhotoLibrary.legacyDragAliases(in: saved.urls + saved.layout.slides.map(\.url), cacheDirectory: legacyCacheDirectory)
+            let aliases = PhotoLibrary.legacyDragAliases(in: saved.urls + (saved.trays ?? []).flatMap(\.urls)
+                + saved.layout.slides.map(\.url), cacheDirectory: legacyCacheDirectory)
             if !aliases.isEmpty {
                 do {
                     // Back up the exact previous bytes before any migration can be saved.
@@ -111,10 +134,22 @@ final class TableModel {
             }
             if let scale = restored.fitScale, scale.isFinite, scale > 0, scale <= 1 { fitScale = scale }
             for slide in layout.slides where !PhotoLibrary.supported(slide.url) { layout.remove(slide.id) }
-            var seen = Set<URL>()
-            photos = (restored.urls + layout.slides.map(\.url) + albums.flatMap { $0.pockets.compactMap(\.url) }).map(\.standardizedFileURL)
-                .filter { PhotoLibrary.supported($0) && seen.insert($0).inserted }.map { Photo(url: $0) }
-            sourceLabel = restored.label
+            if let savedTrays = restored.trays, !savedTrays.isEmpty {
+                var ids = Set<UUID>()
+                trays = savedTrays.map { tray in
+                    var tray = tray
+                    if !ids.insert(tray.id).inserted { tray.id = UUID(); ids.insert(tray.id) }
+                    tray.urls = Self.uniqueURLs(tray.urls).filter { PhotoLibrary.supported($0) }
+                    return tray
+                }
+                selectedTrayID = restored.activeTrayID
+            } else {
+                // A legacy library becomes one tray, including table/album-only references.
+                let urls = Self.uniqueURLs(restored.urls + layout.slides.map(\.url)
+                    + albums.flatMap { $0.pockets.compactMap(\.url) }).filter { PhotoLibrary.supported($0) }
+                trays = [PhotoTray(name: restored.label, urls: urls)]
+            }
+            selectedTrayID = activeTrayID
             if !aliases.isEmpty && message == nil { persist(to: storageURL) }
             // Prepare only the restored table, never the entire imported library.
             var startupSeen = Set<URL>()
@@ -254,48 +289,110 @@ final class TableModel {
         return loaded
     }
 
+    @discardableResult
+    func newTray() -> UUID {
+        var number = trays.count + 1
+        while trays.contains(where: { $0.name == "底栏 \(number)" }) { number += 1 }
+        let tray = PhotoTray(name: "底栏 \(number)")
+        trays.append(tray)
+        selectedTrayID = tray.id
+        selectedTrayForDeletion = nil
+        save()
+        return tray.id
+    }
+
+    func selectTray(_ id: UUID) {
+        guard trays.contains(where: { $0.id == id }) else { return }
+        selectedTrayForDeletion = nil
+        guard id != activeTrayID else { return }
+        selectedTrayID = id
+        save()
+    }
+
+    func selectTrayForDeletion(_ id: UUID) {
+        guard trays.contains(where: { $0.id == id }) else { return }
+        selectTray(id)
+        setSelection([])
+        selectedTrayForDeletion = id
+    }
+
+    var canDeleteSelection: Bool { selectedTrayForDeletion != nil || !selectedIDs.isEmpty }
+
+    func deleteSelection() {
+        if let id = selectedTrayForDeletion { deleteTray(id) }
+        else { removeSelected() }
+    }
+
+    func deleteTray(_ id: UUID) {
+        guard let index = trays.firstIndex(where: { $0.id == id }) else { return }
+        let wasActive = activeTrayID == id
+        let urls = Set(trays[index].urls)
+        let removedIDs = Set(layout.slides.filter { urls.contains($0.url) }.map(\.id))
+        for id in removedIDs { layout.remove(id) }
+        tableOrder.removeAll { removedIDs.contains($0) }
+        selectedIDs.subtract(removedIDs)
+        trays.remove(at: index)
+        // Keep an import destination, with a fresh identity so late imports
+        // targeting the deleted last tray cannot repopulate it.
+        if trays.isEmpty { trays = [PhotoTray(name: "底栏 1")] }
+        if wasActive { selectedTrayID = trays[min(index, trays.count - 1)].id }
+        selectedTrayForDeletion = nil
+        if layout.slides.isEmpty { fitScale = 1 }
+        trimReturnedPhotoPreviews()
+        save()
+    }
+
+    private static func uniqueURLs(_ urls: [URL]) -> [URL] {
+        var seen = Set<URL>()
+        return urls.map(\.standardizedFileURL).filter { seen.insert($0).inserted }
+    }
+
     func chooseFolder() {
+        let trayID = activeTrayID
         let panel = NSOpenPanel()
-        panel.title = "选择照片文件夹"; panel.prompt = "读取照片"
+        panel.title = "从文件夹导入"; panel.prompt = "导入照片"
         panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK { Task { await importURLs(panel.urls, replace: true) } }
+        if panel.runModal() == .OK { Task { await importURLs(panel.urls, into: trayID) } }
     }
 
     func choosePhotos() {
+        let trayID = activeTrayID
         let panel = NSOpenPanel()
         panel.title = "添加照片"; panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = true; panel.canChooseDirectories = false
-        if panel.runModal() == .OK { Task { await importURLs(panel.urls) } }
+        if panel.runModal() == .OK { Task { await importURLs(panel.urls, into: trayID) } }
     }
 
-    func importURLs(_ urls: [URL], replace: Bool = false) async {
+    func importURLs(_ urls: [URL], into trayID: UUID? = nil) async {
+        // Capture the destination before scanning, so switching tabs cannot redirect an import.
+        let destination = trayID ?? activeTrayID
         importsInFlight += 1
         isImporting = true
         defer { importsInFlight -= 1; isImporting = importsInFlight > 0 }
         let found = await Task.detached(priority: .userInitiated) { PhotoLibrary.scan(urls) }.value
         guard !found.isEmpty else { message = "这里没有可读取的照片。支持 JPG、PNG、HEIC、TIFF 及系统支持的 RAW。"; return }
-        if replace {
-            photos = found.map { Photo(url: $0) }
-            sourceLabel = urls.first?.lastPathComponent ?? "你的照片"
-        } else {
-            let existing = Set(photos.map { $0.url })
-            photos += found.filter { !existing.contains($0) }.map { Photo(url: $0) }
+        guard let index = trays.firstIndex(where: { $0.id == destination }) else { return }
+        if trays[index].urls.isEmpty, urls.count == 1, let source = urls.first,
+           (try? source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+            trays[index].name = source.lastPathComponent
         }
+        trays[index].urls = Self.uniqueURLs(trays[index].urls + found)
         save()
     }
 
     func place(_ url: URL, x: Double, y: Double) {
         guard PhotoLibrary.supported(url) else { return }
-        let id = layout.place(url, x: x, y: y)
-        select(id)
-        if !photos.contains(where: { $0.url == url.standardizedFileURL }) {
+        if !allPhotos.contains(where: { $0.url == url.standardizedFileURL }) {
             photos.append(Photo(url: url.standardizedFileURL))
         }
+        let id = layout.place(url, x: x, y: y)
+        select(id)
         save()
     }
 
     func setSelection(_ ids: Set<UUID>) {
+        selectedTrayForDeletion = nil
         let valid = ids.intersection(tableIDs)
         if valid != selectedIDs { selectedIDs = valid }
         selectionIndicatorsVisible = true
@@ -303,6 +400,7 @@ final class TableModel {
 
     func select(_ id: UUID, extending: Bool = false, showIndicator: Bool = true) {
         guard tableIDs.contains(id) else { return }
+        selectedTrayForDeletion = nil
         // Dragging still targets the item for Delete and raises it above other
         // films, but only an explicit click or marquee draws selection chrome.
         selectionIndicatorsVisible = showIndicator
@@ -325,7 +423,24 @@ final class TableModel {
         tableOrder.removeAll { ids.contains($0) }
         selectedIDs.removeAll()
         if layout.slides.isEmpty { fitScale = 1 }
+        trimReturnedPhotoPreviews()
         save()
+    }
+
+    // Returning films should release excess model-held previews immediately,
+    // without waiting for another photo load to apply the existing cache limit.
+    private func trimReturnedPhotoPreviews() {
+        let placed = Set(layout.slides.map(\.url) + onTableAlbums.flatMap { $0.pockets.compactMap(\.url) })
+        while previewOrder.count > 12,
+              let index = previewOrder.firstIndex(where: { !placed.contains($0) }) {
+            preparedPreviews.removeValue(forKey: previewOrder.remove(at: index))
+        }
+        while tablePreviewOrder.count > 12,
+              let index = tablePreviewOrder.firstIndex(where: { !placed.contains($0) }) {
+            let evicted = tablePreviewOrder.remove(at: index)
+            preparedTablePreviews.removeValue(forKey: evicted)
+            tablePreviewSizes.removeValue(forKey: evicted)
+        }
     }
 
     /// Rect is in board screen coordinates, after the camera transform.
@@ -358,6 +473,7 @@ final class TableModel {
         layout.clear(); selectedID = nil; fitScale = 1; zoom = 1; pan = .zero
         for i in albums.indices { albums[i].position = nil }; tableOrder = []
         referenceSize = boardSize.width > 1 ? boardSize : nil
+        trimReturnedPhotoPreviews()
         save()
     }
 
@@ -543,13 +659,15 @@ final class TableModel {
         guard providers.contains(where: { provider in
             (PhotoDrag.acceptedTypes + [AlbumDrag.contentType]).contains { provider.hasItemConformingToTypeIdentifier($0.identifier) }
         }) else { return false }
-        Task { await acceptDrop(providers, at: point, board: board) }
+        let trayID = activeTrayID
+        Task { await acceptDrop(providers, at: point, board: board, into: trayID) }
         return true
     }
 
     /// Awaitable entry point also used by isolated drop regression checks.
     @discardableResult
-    func acceptDrop(_ providers: [NSItemProvider], at point: CGPoint?, board: CGRect?) async -> Bool {
+    func acceptDrop(_ providers: [NSItemProvider], at point: CGPoint?, board: CGRect?, into trayID: UUID? = nil) async -> Bool {
+        let destination = trayID ?? activeTrayID
         // Capture the drop camera before asynchronous decoding/import can change it.
         let dropCamera = viewport
         let dropWorldSize = referenceSize ?? board?.size ?? worldSize
@@ -561,15 +679,19 @@ final class TableModel {
             } else if provider.hasItemConformingToTypeIdentifier(PhotoDrag.contentType.identifier) {
                 // An invalid/stale internal reference cannot fall back to file import.
                 if let url = await PhotoDrag.sourceURL(from: provider),
-                   photos.contains(where: { $0.url == url }) { internalURLs.append(url) }
+                   allPhotos.contains(where: { $0.url == url }) { internalURLs.append(url) }
             } else if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
                       let url = await PhotoDrag.fileURL(from: provider) {
                 externalURLs.append(url)
             }
         }
         guard !internalURLs.isEmpty || !externalURLs.isEmpty || !albumIDs.isEmpty else { return false }
+        guard trays.contains(where: { $0.id == destination }) else { return false }
         // Folders always go to the tray, never automatically onto the lamp.
-        if !externalURLs.isEmpty { await importURLs(externalURLs) }
+        if !externalURLs.isEmpty {
+            await importURLs(externalURLs, into: destination)
+            guard trays.contains(where: { $0.id == destination }) else { return false }
+        }
         if let point, let board, board.width > 0, board.height > 0, board.contains(point) {
             for id in albumIDs {
                 let world = dropCamera.world(x: point.x - board.minX, y: point.y - board.minY)
@@ -578,7 +700,7 @@ final class TableModel {
             var offset = 0.0
             for url in internalURLs + externalURLs where PhotoLibrary.supported(url) {
                 // Internal drags only place a current library member: never append/import.
-                guard photos.contains(where: { $0.url == url }) else { continue }
+                guard allPhotos.contains(where: { $0.url == url }) else { continue }
                 let world = dropCamera.world(x: point.x - board.minX + offset * board.width,
                                              y: point.y - board.minY + offset * board.height)
                 selectedID = layout.place(url, x: world.x / dropWorldSize.width,
@@ -599,6 +721,8 @@ final class TableModel {
         var viewport: TableViewport? = nil
         var albums: [AlbumPage]? = nil
         var tableOrder: [UUID]? = nil
+        var trays: [PhotoTray]? = nil
+        var activeTrayID: UUID? = nil
     }
 
     /// JSON remapping preserves immutable slide IDs and geometry without changing
@@ -606,6 +730,12 @@ final class TableModel {
     private static func remapping(_ saved: Saved, aliases: [URL: URL]) throws -> Saved {
         var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as! [String: Any]
         object["urls"] = saved.urls.map { (aliases[$0.standardizedFileURL] ?? $0).absoluteString }
+        if let trays = saved.trays {
+            object["trays"] = trays.map { tray -> [String: Any] in
+                ["id": tray.id.uuidString, "name": tray.name,
+                 "urls": Self.uniqueURLs(tray.urls.map { aliases[$0.standardizedFileURL] ?? $0 }).map(\.absoluteString)]
+            }
+        }
         var layoutObject = object["layout"] as! [String: Any]
         let objects = layoutObject["slides"] as! [[String: Any]]
         var seen = Set<URL>()
@@ -639,9 +769,9 @@ final class TableModel {
     }
 
     private func persist(to storageURL: URL) {
-        let saved = Saved(urls: photos.map(\.url), layout: layout, label: sourceLabel, fitScale: fitScale,
+        let saved = Saved(urls: allPhotos.map(\.url), layout: layout, label: sourceLabel, fitScale: fitScale,
                           worldWidth: referenceSize.map { Double($0.width) }, worldHeight: referenceSize.map { Double($0.height) }, viewport: viewport,
-                          albums: albums, tableOrder: tableOrder)
+                          albums: albums, tableOrder: tableOrder, trays: trays, activeTrayID: activeTrayID)
         do {
             try FileManager.default.createDirectory(at: storageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(saved).write(to: storageURL, options: .atomic)

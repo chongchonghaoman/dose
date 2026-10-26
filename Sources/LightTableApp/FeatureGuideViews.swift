@@ -36,18 +36,19 @@ struct FeatureGuideWelcome: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("观片台已更新").font(.system(size: 21, weight: .semibold))
-                    Text("v\(version) · 准备更从容，胶片更有质感")
+                    Text("v\(version) · 底栏取片与收回，观片更顺手")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }.padding(.bottom, 24)
-            feature("square.stack.3d.up", title: "胶片有厚度，拖动更干净",
-                    text: "无边框照片增加薄侧沿与贴台阴影，\n普通拖动不再闪出蓝色选择框。")
+            feature("arrow.up.arrow.down", title: "拿上台面，随时收回",
+                    text: "照片上台后从底栏隐藏。选中台面照片\n按 Delete，就按原顺序收回原来的底栏。")
             Divider().padding(.vertical, 19)
-            feature("viewfinder.circle", title: "准备好，再凑近看",
-                    text: "重启先恢复台面与高清预览，\n准备完成即可开灯、用放大镜观察。")
+            feature("rectangle.split.3x1", title: "分栏整理，也能整栏删除",
+                    text: "导入追加到当前底栏，点 ➕ 新建一栏。\n点底栏标签再按 Delete，移除该栏及其台面散片。",
+                    note: "磁盘原图保留；点击空白或按 Esc 可取消选中。")
             Divider().padding(.vertical, 19)
-            feature("arrow.up.left.and.arrow.down.right", title: "Shift + Z，回到全局",
-                    text: "整理全局快捷键改为 ⇧Z，\n恢复默认尺寸并重新整理台面。")
+            feature("plus.magnifyingglass", title: "镜片与胶片，更有实物感",
+                    text: "放大镜保留清晰中心、外围曲率与柔和反光。\n胶片增加薄侧沿与轻微翘角，按住空格凑近看。")
             HStack(spacing: 10) {
                 Spacer()
                 Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle())
@@ -93,7 +94,6 @@ struct FeatureGuideButtonStyle: ButtonStyle {
     }
 }
 
-enum FeatureGuideTarget: Hashable { case tools, magnification, removal, overview }
 struct FeatureGuideAnchors: PreferenceKey {
     static var defaultValue: [FeatureGuideTarget: Anchor<CGRect>] = [:]
     static func reduce(value: inout [FeatureGuideTarget: Anchor<CGRect>], nextValue: () -> [FeatureGuideTarget: Anchor<CGRect>]) {
@@ -123,21 +123,29 @@ struct FeatureGuideTour: View {
     @State private var cardHeight: CGFloat = 230
 
     private var target: FeatureGuideTarget {
-        step == 1 ? .overview : (step == 2 && loupeEnabled ? .magnification : .tools)
+        FeatureGuideTarget.releaseTour(step: step, loupeEnabled: loupeEnabled)
     }
     private var title: String {
-        ["拖动胶片，不闪蓝框", "Shift + Z，整理全局", "准备完成，凑近即看"][step]
+        ["导入照片，按底栏分类", "拿到台面，再收回原栏", "点底栏标签，按 Delete 删除",
+         "选择放大镜", "按住空格，凑近照片", "切换观察倍率"][step]
     }
     private var details: String {
         switch step {
-        case 0: return "普通指针下直接拖动胶片，\n不再显示蓝框和缩放手柄。\n主动点击、⌘多选和 Shift 框选仍有提示。"
-        case 1: return "按 Shift + Z，或点击「整理全局」。\n恢复默认尺寸、整理全部胶片并显示全局。"
-        default: return "重启准备好高清预览后，选择放大镜，\n按住空格凑近；Tab 切换原倍率／8×。\n台面按显示大小加载，放大镜另用高清预览。"
+        case 0: return "「从文件夹导入」会追加到当前底栏。\n点标签右侧的 ➕ 新建底栏，\n点击标签切换要整理的那一栏。"
+        case 1: return "从底栏拖一张照片到台面，底栏里\n就会隐藏它。选中台面照片按 Delete，\n或右键收回，就回到原底栏、原顺序。"
+        case 2: return "点击要删除的底栏标签，再按 Delete。\n该栏及它已放上台面的散片一起移除，\n磁盘原图保留。点空白或按 Esc 取消选中。"
+        case 3: return "点击圈出的放大镜，或按 V。\n把鼠标移到照片上，观察中央细节\n与外围的镜片曲率。"
+        case 4: return "在照片上按住空格，松开退回。\n凑近时继续移动鼠标查看细节，\n镜缘会保留较轻的折射与反光。"
+        default: return "用右侧倍率滑块选择「原倍率／8×」，\n也可以按 Tab 切换。按住空格看变化，\n小放大镜仍保持 1.5×。"
         }
     }
     private var context: String? {
-        if !hasPhotos { return "台面还没有照片，可从底栏拖入后再试。" }
-        if step == 0 && loupeEnabled { return "先点击上方的普通指针。" }
+        if step == 1 && selectedCount > 1 { return "已选中 \(selectedCount) 张，按 Delete 可一起收回。" }
+        if step == 1 || step >= 3 {
+            if !hasPhotos { return "台面还没有照片，可从底栏拖入后再试。" }
+            if step == 1 && loupeEnabled { return "按 A 切回普通指针，可点选或多选照片。" }
+            if !loupeEnabled && step > 3 { return "先点击圈出的放大镜，或按 V。" }
+        }
         return nil
     }
 
@@ -146,7 +154,11 @@ struct FeatureGuideTour: View {
             let rect = anchors[target].map { proxy[$0] }
             let width = min(310.0, max(240, proxy.size.width - 32))
             let proposedX = (rect?.maxX ?? proxy.size.width - 24) - width / 2
-            let proposedY = (rect?.maxY ?? 52) + cardHeight / 2 + 14
+            let isTrayTarget = target == .trayImport || target == .trayTabs
+            let anchorY = target == .viewingArea ? (rect?.minY ?? 0) + 64 : (rect?.maxY ?? 52)
+            let proposedY = isTrayTarget
+                ? (rect?.minY ?? boardFrame.maxY) - cardHeight / 2 - 14
+                : anchorY + cardHeight / 2 + 14
             let x = min(proxy.size.width - width / 2 - 16, max(width / 2 + 16, proposedX))
             let y = min(proxy.size.height - cardHeight / 2 - 16, max(cardHeight / 2 + 16, proposedY))
             if let rect {
@@ -157,7 +169,7 @@ struct FeatureGuideTour: View {
             }
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("\(step + 1) / 3").monospacedDigit()
+                    Text("\(step + 1) / \(FeatureGuideState.tourStepCount)").monospacedDigit()
                     Spacer()
                     Button("跳过", action: close).buttonStyle(.plain).accessibilityLabel("跳过新功能指引")
                 }.font(.system(size: 11)).foregroundStyle(.secondary)
@@ -168,7 +180,7 @@ struct FeatureGuideTour: View {
                     Button("上一步", action: previous).buttonStyle(.plain).font(.system(size: 12))
                         .disabled(step == 0).opacity(step == 0 ? 0 : 1)
                     Spacer()
-                    Button(step == 2 ? "开始观片" : "下一步", action: next)
+                    Button(step + 1 == FeatureGuideState.tourStepCount ? "开始观片" : "下一步", action: next)
                         .buttonStyle(FeatureGuideButtonStyle(primary: true))
                 }.padding(.top, 4)
             }
@@ -181,7 +193,8 @@ struct FeatureGuideTour: View {
                     .onChange(of: card.size.height, initial: true) { _, height in cardHeight = height }
             })
             .position(x: x, y: y)
-            .accessibilityElement(children: .contain).accessibilityLabel("新功能操作提示，第\(step + 1)步，共3步")
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("新功能操作提示，第\(step + 1)步，共\(FeatureGuideState.tourStepCount)步")
         }
     }
 }
