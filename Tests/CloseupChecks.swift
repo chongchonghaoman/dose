@@ -252,12 +252,12 @@ private actor RasterGate {
             for tick in 0...100 {
                 let sample = LoupeSampling(in: board, closeViewing: true, mode: mode, progress: CGFloat(tick) / 100)
                 let input = sample.input(scene: blendScene, displayScale: 2)
-                smooth = smooth && input.refractionScale >= 0.45 - 1e-8 && input.refractionScale <= previousStrength
+                smooth = smooth && input.refractionScale >= 0.75 - 1e-8 && input.refractionScale <= previousStrength
                     && previousStrength - input.refractionScale < 0.02 && input.scene.point == point
                 previousStrength = input.refractionScale
             }
-            check(smooth && abs(previousStrength - 0.45) < 1e-8,
-                  "\(mode) keeps continuous restrained refraction and the same source point during approach")
+            check(smooth && abs(previousStrength - 0.75) < 1e-8,
+                  "\(mode) keeps continuous visible refraction and the same source point during approach")
         }
         var approach = LoupeApproach(scene: blendScene, origin: point, size: board, magnificationBlend: 1,
                                      closeViewing: true, displayScale: 2, progress: 1)
@@ -418,12 +418,27 @@ private actor RasterGate {
         state.pointer = point
         check(!state.press(), "space without a visible lens does not start a close view")
         state.scene = scene
+        check(!state.cursorHidden, "inactive lens does not hide the system pointer")
+        state.cursorEnabled = true
+        check(state.cursorHidden && !state.isClose, "ordinary visible lens hides the pointer before space is pressed")
+        state.pointer = nil
+        check(!state.cursorHidden, "leaving the ordinary lens restores the pointer")
+        state.pointer = point
+        check(state.cursorHidden, "re-entering the ordinary lens hides the pointer")
+        state.cursorEnabled = false
+        state.scene = scene
+        state.pointer = point
+        check(!state.cursorHidden, "late scene and hover updates cannot hide the pointer in an inactive window or tool")
+        state.cursorEnabled = true
+        state.scene = nil
+        check(!state.cursorHidden, "a disappearing lens restores the pointer during a drag")
+        state.scene = scene
         check(state.press() && state.isClose && state.cursorHidden, "space down enters and hides cursor")
         let movedPoint = CGPoint(x: 800, y: 500)
         state.pointer = movedPoint
         check(state.sourcePoint == movedPoint, "held-space view follows pointer movement instead of locking the source")
         state.pointer = nil
-        check(state.sourcePoint == movedPoint, "leaving the canvas retains the latest viewed point")
+        check(state.sourcePoint == movedPoint && !state.cursorHidden, "leaving the canvas retains the viewed point and restores the cursor")
         state.pointer = movedPoint
         state.release(reduceMotion: false)
         check(!state.isClose && state.anchor == movedPoint, "release returns at the latest viewed point")
@@ -435,16 +450,17 @@ private actor RasterGate {
         try await Task.sleep(for: .seconds(LoupeGeometry.exitDuration + 0.05))
         check(state.isClose && state.anchor == returnPoint, "cancelled return cannot interrupt a new close view")
         state.release(reduceMotion: true)
-        check(state.anchor == nil && !state.cursorHidden && !state.isClose, "reduced motion exits immediately and restores cursor")
+        check(state.anchor == nil && state.cursorHidden && !state.isClose, "reduced motion returns immediately to the ordinary lens with its cursor still hidden")
         _ = state.press(); state.release(reduceMotion: false)
         check(state.anchor != nil && state.cursorHidden, "return retains its high-resolution scene until the motion finishes")
         try await Task.sleep(for: .seconds(LoupeGeometry.exitDuration + 0.05))
-        check(state.anchor == nil && !state.cursorHidden, "normal return completes and restores the pointer after the new duration")
+        check(state.anchor == nil && state.cursorHidden, "normal return keeps the pointer hidden under the ordinary lens")
         _ = state.press(); state.cancel()
         check(state.anchor == nil && !state.cursorHidden && !state.isClose, "cancellation balances cursor and clears close state")
         check(state.closeMagnification == .eight, "pointer mode and cancellation retain the selected close magnification")
 
         let tracking = LoupeExperience()
+        tracking.cursorEnabled = true
         tracking.scene = scene; tracking.pointer = point
         tracking.pointer = CGPoint(x: 420, y: 320)
         check(tracking.sourcePoint == tracking.pointer, "ordinary lens tracks the pointer directly")
@@ -470,8 +486,8 @@ private actor RasterGate {
         check(tracking.sourcePoint == tracking.pointer, "repress during return preserves unified movement speed")
         tracking.release(reduceMotion: true)
         tracking.pointer = CGPoint(x: 500, y: 400)
-        check(tracking.sourcePoint == tracking.pointer && !tracking.cursorHidden,
-              "reduced-motion return restores the cursor and retains direct tracking")
+        check(tracking.sourcePoint == tracking.pointer && tracking.cursorHidden,
+              "reduced-motion return retains ordinary cursor hiding and direct tracking")
         tracking.cancel()
 
         // Verify the actual view scales pixels inside a stationary circle,
@@ -567,7 +583,7 @@ private actor RasterGate {
         check(reducedA == reducedB, "reduced motion holds glass reflections still")
         let closeGlass = LoupeGlassPose(origin: CGPoint(x: 80, y: 200), size: board, progress: 1, reduceMotion: false)
         check(abs(closeGlass.intensity - 0.45) < 1e-8 && leftGlass.intensity == 1 && closeGlass.rimIntensity == 0,
-              "close viewing retains subdued glass while the housing fades without changing magnification")
+              "close viewing softens the transparent glass reflection without changing magnification")
         let invalidGlass = LoupeGlassPose(origin: CGPoint(x: CGFloat.nan, y: CGFloat.infinity), size: .zero,
                                           progress: CGFloat.nan, reduceMotion: false)
         check(invalidGlass.angle.isFinite && invalidGlass.intensity.isFinite,
@@ -601,17 +617,17 @@ private actor RasterGate {
                     reflectionChange = max(reflectionChange, abs(a - b))
                 }
                 let white = (color.redComponent + color.greenComponent + color.blueComponent) / 3
-                if radius > 0.978 && radius < 0.992 { darkBevel = max(darkBevel, a * (1 - white)) }
+                if radius > 0.950 && radius < 0.973 { darkBevel = max(darkBevel, a * (1 - white)) }
                 if radius > 0.992 && radius < 0.999 { brightLip = max(brightLip, a * white) }
             }
         }
         check(centreAlpha < 0.01, "glass surface leaves the central photograph fully clear")
-        check(edgeAlpha > 0.03 && edgeAlpha < 0.30 && reflectionChange > 0.005,
+        check(edgeAlpha > 0.30 && edgeAlpha < 0.65 && reflectionChange > 0.005,
               "production glass draws visible rim reflections that move relative to the photograph")
         check(closeEdgeAlpha > 0.015 && closeEdgeAlpha < edgeAlpha * 0.65,
               "production close glass keeps a subdued visible reflection")
-        check(darkBevel > 0.02 && darkBevel < 0.16 && brightLip > 0.03 && brightLip < 0.30,
-              "production glass keeps a narrow, restrained dark bevel and bright lip")
+        check(darkBevel > 0.02 && darkBevel < 0.16 && brightLip > 0.30 && brightLip < 0.65,
+              "production glass keeps a shallow bevel and a translucent pale cross-section")
 
         let corner = CGPoint(x: 110, y: 120)
         let windowSize = CGSize(width: 840, height: 640)
@@ -635,6 +651,7 @@ private actor RasterGate {
         window.alphaValue = 0; window.orderFront(nil)
         defer { monitor.stop(); window.orderOut(nil); state.cancel() }
         var presses = 0, releases = 0, cancellations = 0
+        monitor.availabilityChanged = { state.cursorEnabled = $0 }
         monitor.enabled = true
         monitor.pressed = { presses += 1; return true }
         monitor.released = { releases += 1 }
@@ -679,6 +696,8 @@ private actor RasterGate {
         check(monitor.handle(key(.keyDown, code: 48)) == nil && cycles == 2 && state.closeMagnification == .original,
               "a second Tab press returns to the original magnification")
         _ = monitor.handle(key(.keyUp, code: 48))
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+        check(state.cursorHidden, "the active window restores ordinary lens cursor hiding")
         monitor.pressed = { state.press() }
         monitor.released = { state.release(reduceMotion: true) }
         monitor.cancelled = { cancellations += 1; state.cancel() }
@@ -688,8 +707,8 @@ private actor RasterGate {
               state.isClose && state.cursorHidden && state.sourcePoint == heldPoint,
               "Tab changes magnification during held-space viewing without dropping the lens or source point")
         _ = monitor.handle(key(.keyUp, code: 48))
-        check(monitor.handle(key(.keyUp)) == nil && !state.isClose && !state.cursorHidden,
-              "space release still returns normally after a Tab magnification change")
+        check(monitor.handle(key(.keyUp)) == nil && !state.isClose && state.cursorHidden,
+              "space release returns to the ordinary hidden cursor after a Tab magnification change")
         for modifiers: NSEvent.ModifierFlags in [.command, .control, .option, .shift] {
             check(monitor.handle(key(.keyDown, modifiers: modifiers, code: 48)) != nil && cycles == 3,
                   "modified Tab passes through: \(modifiers.rawValue)")
@@ -707,6 +726,9 @@ private actor RasterGate {
         check(monitor.handle(key(.keyUp, code: 48)) != nil &&
               monitor.handle(key(.keyDown, code: 48)) == nil && cycles == 5,
               "focus loss clears Tab state so the next press can switch again")
+        check(!state.cursorHidden && !state.cursorEnabled, "window focus loss releases the cursor even with an ordinary lens")
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+        check(state.cursorHidden, "window focus return hides the cursor only for an available lens")
         monitor.enabled = false
         monitor.reset()
         check(monitor.handle(key(.keyUp, code: 48)) != nil &&

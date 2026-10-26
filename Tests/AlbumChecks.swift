@@ -61,6 +61,21 @@ import LightTableCore
         let photo = root.appendingPathComponent("photo.png")
         let bytes = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
         try bytes.write(to: photo)
+        let ordering = TableModel(restore: false)
+        let firstFilm = ordering.layout.place(photo, x: 0.2, y: 0.2)
+        let secondFilm = ordering.layout.place(root.appendingPathComponent("order-only.png"),
+                                               x: 0.4, y: 0.4)
+        let placedAlbum = ordering.newAlbum()
+        ordering.updateAlbum(placedAlbum) { $0.position = CGPoint(x: 20, y: 20) }
+        let unplacedAlbum = ordering.newAlbum()
+        ordering.tableOrder = [UUID(), placedAlbum, secondFilm, secondFilm, unplacedAlbum]
+        check(ordering.tableIDs == [placedAlbum, secondFilm, firstFilm],
+              "stacking excludes stale IDs and preserves first occurrence and fallback order")
+        check(ordering.layerIndex(placedAlbum) == 0 && ordering.layerIndex(secondFilm) == 1
+              && ordering.layerIndex(firstFilm) == 2, "stacking indices retain existing semantics")
+        ordering.layout.remove(secondFilm)
+        check(ordering.tableIDs == [placedAlbum, firstFilm],
+              "removed films disappear from stacking without disturbing survivors")
         let saved = root.appendingPathComponent("layout.json")
         let model = TableModel(restore: false, storageURL: saved)
         model.boardSize = CGSize(width: 1000, height: 700)

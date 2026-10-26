@@ -42,7 +42,7 @@ struct LoupeChecks {
             let r = hypot(Double(x) - 260, Double(y) - 260) / 260
             let index = (y * 520 + x) * 4
             let difference = (0..<3).reduce(0.0) { $0 + abs(Double(a[index + $1]) - Double(b[index + $1])) } / 3
-            if r < 0.70 { centre += difference; centreN += 1 }
+            if r < 0.73 { centre += difference; centreN += 1 }
             if r > 0.78 && r < 0.90 { shoulder += difference; shoulderN += 1 }
             if r > 0.94 && r < 0.995 { edge += difference; edgeN += 1 }
         } }
@@ -60,19 +60,6 @@ struct LoupeChecks {
         }
         precondition(fadedGlass(0) == a, "disabled refraction changes source pixels")
         print("PASS explicit zero-strength fallback preserves actual source pixels")
-        let half = fadedGlass(0.45)
-        var fullDifference = 0.0, halfDifference = 0.0
-        for y in 0..<520 { for x in 0..<520 {
-            let r = hypot(Double(x) - 260, Double(y) - 260) / 260
-            if r > 0.94 && r < 0.995 {
-                let i = (y * 520 + x) * 4
-                fullDifference += abs(Double(a[i]) - Double(b[i]))
-                halfDifference += abs(Double(a[i]) - Double(half[i]))
-            }
-        } }
-        precondition(halfDifference > fullDifference * 0.2 && halfDifference < fullDifference * 0.8,
-            "approach refraction does not fade continuously")
-        print("PASS actual rim refraction fades with the shared approach progress")
         let crossing = pixels(render(CGPoint(x: 0, y: 0), refracts: true))
         precondition(stride(from: 3, to: crossing.count, by: 4).allSatisfy { crossing[$0] == 255 }, "photo edge left a transparent seam")
         print("PASS lens across photo and mount edges stays fully opaque")
@@ -98,8 +85,22 @@ struct LoupeChecks {
             precondition(step >= -1 && step <= 3, "rim contains a radial fold or sampling seam")
             largestShift = max(largestShift, abs(Int(glassRamp[i]) - Int(straightRamp[i])))
         }
-        precondition(largestShift >= 1 && largestShift <= 5, "edge refraction is absent or excessive")
+        precondition(largestShift >= 3 && largestShift <= 5, "edge refraction is absent or excessive")
         print("PASS radial sampling stays continuous, monotonic and bounded (ramp shift \(largestShift))")
+        let rampPhoto = LoupeScenePhoto(preview: rampPreview, center: CGPoint(x: 300, y: 300),
+            imageSize: CGSize(width: 600, height: 600))
+        let closeRamp = pixels(LoupeRenderer.shared.render(photos: [rampPhoto], point: CGPoint(x: 300, y: 300),
+            diameter: 260, magnification: 2.5, displayScale: 2, transmission: 1, flare: 0, brightness: 1,
+            refractionScale: 0.75)!)
+        var fullShift = 0, closeShift = 0
+        for x in 490..<515 {
+            let i = (260 * 520 + x) * 4
+            fullShift += abs(Int(glassRamp[i]) - Int(straightRamp[i]))
+            closeShift += abs(Int(closeRamp[i]) - Int(straightRamp[i]))
+        }
+        precondition(Double(closeShift) > Double(fullShift) * 0.60 && Double(closeShift) < Double(fullShift) * 0.90,
+            "close viewing lost the visible, smoothly reduced radial refraction")
+        print("PASS close viewing retains substantial curvature with a smooth reduction")
         var rimShifts = [Int]()
         for diameter: CGFloat in [260, 780] {
             for scale: CGFloat in [1, 2, 3] {
@@ -119,12 +120,12 @@ struct LoupeChecks {
                         return abs(Int(plain[i]) - Int(bent[i]))
                     }.max() ?? 0
                 }
-                precondition(shift >= 1 && shift <= 5, "glass curvature sample shift \(shift) at diameter \(diameter), scale \(scale)")
+                precondition(shift >= 3 && shift <= 5, "glass curvature sample shift \(shift) at diameter \(diameter), scale \(scale)")
                 rimShifts.append(shift)
             }
         }
         precondition(rimShifts.max()! - rimShifts.min()! <= 2, "approaching or Retina scale changes lens curvature")
-        print("PASS normal and close lenses retain restrained curvature at 1x, 2x and 3x display scales")
+        print("PASS normal and close lenses retain moderate bounded curvature at 1x, 2x and 3x display scales")
         func solid(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> PhotoPreview {
             context.setFillColor(CGColor(red: r, green: g, blue: b, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: size, height: size))
@@ -137,7 +138,7 @@ struct LoupeChecks {
             LoupeScenePhoto(preview: red, center: CGPoint(x: 660.5, y: 300), imageSize: CGSize(width: 2, height: 100))
         ]
         for scale: CGFloat in [1, 2] {
-            for strength: CGFloat in [0.45, 1] {
+            for strength: CGFloat in [0.75, 1] {
                 let region = CGRect(x: 755, y: 376, width: 25, height: 28)
                 func cropRender(_ viewport: CGRect?) -> CGImage {
                     LoupeRenderer.shared.render(photos: cropPhotos, point: CGPoint(x: 300, y: 300),

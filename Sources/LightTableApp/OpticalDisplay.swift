@@ -1,6 +1,7 @@
 import AppKit
 import CoreImage
 import MetalKit
+import os
 import SwiftUI
 
 /// Ordinary Display P3 output; redraws only when image, light or size changes.
@@ -18,6 +19,30 @@ struct OpticalDisplay: NSViewRepresentable {
     }
 }
 
+/// Bounded recovery after a visible surface fails to draw. The delays only
+/// pace failure retries; ordinary input still redraws immediately.
+struct OpticalRetryBudget {
+    private(set) var revision = 0
+    private(set) var attempts = 0
+
+    mutating func beginNewInput() {
+        revision &+= 1
+        attempts = 0
+    }
+
+    mutating func nextDelay() -> TimeInterval? {
+        let delays: [TimeInterval] = [1.0 / 60.0, 0.05, 0.15]
+        guard attempts < delays.count else { return nil }
+        let delay = delays[attempts]
+        attempts += 1
+        return delay
+    }
+
+    mutating func succeeded() {
+        attempts = 0
+    }
+}
+
 final class OpticalMetalView: MTKView {
     static let gpu = MTLCreateSystemDefaultDevice()
     private static let queue = gpu?.makeCommandQueue()
@@ -25,6 +50,11 @@ final class OpticalMetalView: MTKView {
         .workingColorSpace: PhotoOptics.blendSpace, .cacheIntermediates: false]) }
     private static let pending = NSHashTable<OpticalMetalView>.weakObjects()
     private static var scheduled = false
+    private static let log = Logger(subsystem: "local.ourlighttable.desktop", category: "OpticalDisplay")
+    /// Injectable so checks can drive retries without a window or a real timer.
+    static var scheduleRetry: (TimeInterval, @escaping () -> Void) -> Void = { delay, work in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
     private var preview: PhotoPreview?
     private var image: CGImage?
     private(set) var loupe: LoupeDisplayInput?
@@ -39,6 +69,14 @@ final class OpticalMetalView: MTKView {
     private var cachedStableParams: CacheParams?
     private var cacheBuildInFlight = false
     private var cacheGeneration = 0
+
+    // Failure recovery: at most one live deferred redraw per view, tied to
+    // the input revision that failed.
+    private(set) var retry = OpticalRetryBudget()
+    private(set) var pendingRetry: Int?
+    private var retryToken = 0
+    private var exhaustedRevision: Int?
+    private var drawnSize = CGSize.zero
 
     private struct CacheParams: Equatable {
         let source: ObjectIdentifier
@@ -86,6 +124,51 @@ final class OpticalMetalView: MTKView {
         cacheBuildInFlight = false
     }
 
+    private func beginNewInput() {
+        retry.beginNewInput()
+        cancelRetry()
+    }
+
+    private func cancelRetry() {
+        retryToken &+= 1
+        pendingRetry = nil
+    }
+
+    /// A visible surface could not produce a frame; preserve the input and
+    /// schedule a bounded redraw for this input revision.
+    func noteDrawFailure(_ reason: String) {
+        guard pendingRetry == nil else { return }
+        let revision = retry.revision
+        guard let delay = retry.nextDelay() else {
+            if exhaustedRevision != revision {
+                exhaustedRevision = revision
+                Self.log.error("Optical surface retries exhausted: \(reason, privacy: .public)")
+            }
+            return
+        }
+        if retry.attempts == 1 {
+            Self.log.debug("Optical surface draw failed: \(reason, privacy: .public)")
+        }
+        retryToken &+= 1
+        let token = retryToken
+        pendingRetry = token
+        Self.scheduleRetry(delay) { [weak self] in self?.retryFired(token: token, revision: revision) }
+    }
+
+    /// Called after the GPU completed this input's frame.
+    func noteDrawSuccess() {
+        retry.succeeded()
+        cancelRetry()
+    }
+
+    private func retryFired(token: Int, revision: Int) {
+        guard pendingRetry == token, retry.revision == revision else { return }
+        pendingRetry = nil
+        // Detached views wait for the next window or size event instead of polling.
+        guard window != nil else { return }
+        needsDisplay = true
+    }
+
     func set(preview: PhotoPreview?, image: CGImage?, transmission: Double,
              flare: Double, brightness: Double, loupe: LoupeDisplayInput? = nil) {
         let sourceChanged = self.preview?.source !== preview?.source || self.preview?.lit !== preview?.lit ||
@@ -103,16 +186,18 @@ final class OpticalMetalView: MTKView {
             // Rasterize the visible viewport at its current Retina resolution.
             drawableSize = loupe.pixelSize
         }
-        if changed { needsDisplay = true }
+        if changed { beginNewInput(); needsDisplay = true }
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         invalidateCache()
+        beginNewInput()
         needsDisplay = true
     }
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         invalidateCache()
+        beginNewInput()
         needsDisplay = true
     }
 
@@ -126,29 +211,90 @@ final class OpticalMetalView: MTKView {
         DispatchQueue.main.async { Self.drawPending() }
     }
 
+    private struct EncodedSurface {
+        weak var view: OpticalMetalView?
+        let revision: Int
+        let size: CGSize
+    }
+
+    private enum LiveEncode {
+        case idle
+        case failed(String)
+        case encoded(CAMetalDrawable)
+    }
+
+    private var isPresentable: Bool {
+        guard let window, let screen = window.screen, window.frame.intersects(screen.frame) else { return false }
+        return visibleRect.width > 0 && visibleRect.height > 0
+    }
+
     private static func drawPending() {
         scheduled = false
         let views = pending.allObjects
         pending.removeAllObjects()
-        guard let buffer = queue?.makeCommandBuffer(), let renderer else { return }
+        guard let renderer else { return }
+        // Hidden, windowless or offscreen views wait for a later display event.
+        let visible = views.filter(\.isPresentable)
+        drawVisible(visible, renderer: renderer, makeCommandBuffer: { queue?.makeCommandBuffer() })
+    }
+
+    /// The caller has checked visibility. Injecting only buffer allocation lets
+    /// checks exercise allocation failure without a window or GPU exhaustion.
+    static func drawVisible(_ views: [OpticalMetalView], renderer: CIContext,
+                            makeCommandBuffer: () -> MTLCommandBuffer?) {
+        // Sync size and retry revision before any allocation can fail. Idle
+        // surfaces must not consume a retry when the whole batch lacks a buffer.
+        let visible = views.filter { $0.prepareDraw() }
+        guard !visible.isEmpty else { return }
+        guard let buffer = makeCommandBuffer() else {
+            for view in visible { view.noteDrawFailure("command buffer unavailable") }
+            return
+        }
         var drawables: [CAMetalDrawable] = []
-        for view in views {
-            guard let window = view.window, let screen = window.screen,
-                  window.frame.intersects(screen.frame),
-                  view.visibleRect.width > 0, view.visibleRect.height > 0 else { continue }
-            if let drawable = view.encode(into: buffer, renderer: renderer) { drawables.append(drawable) }
+        var encoded: [EncodedSurface] = []
+        for view in visible {
+            switch view.encode(into: buffer, renderer: renderer) {
+            case .idle: continue
+            case .failed(let reason): view.noteDrawFailure(reason)
+            case .encoded(let drawable):
+                drawables.append(drawable)
+                encoded.append(EncodedSurface(view: view, revision: view.retry.revision, size: view.drawableSize))
+            }
         }
         guard !drawables.isEmpty else { return }
-        // Commit GPU work first, then present after the buffer is scheduled.
+        buffer.addCompletedHandler { completed in
+            let succeeded = completed.status == .completed
+            DispatchQueue.main.async {
+                for surface in encoded {
+                    // A newer input or drawable size owns the view's retry state now.
+                    guard let view = surface.view, view.retry.revision == surface.revision,
+                          view.drawableSize == surface.size else { continue }
+                    if succeeded { view.noteDrawSuccess() } else { view.noteDrawFailure("GPU command buffer failed") }
+                }
+            }
+        }
+        // Transaction-synchronized layers require scheduled GPU work before present.
         buffer.commit()
+        buffer.waitUntilScheduled()
+        // Skip errors already known before presentation. Scheduling is not
+        // completion; later GPU failures recover through the completed handler.
+        guard buffer.status != .error else { return }
         for drawable in drawables { drawable.present() }
     }
 
-    private func encode(into buffer: MTLCommandBuffer, renderer: CIContext) -> CAMetalDrawable? {
+    private func prepareDraw() -> Bool {
+        guard drawableSize.width > 0, drawableSize.height > 0,
+              preview != nil || image != nil || loupe != nil else { return false }
+        if drawableSize != drawnSize { drawnSize = drawableSize; beginNewInput() }
+        return true
+    }
+
+    private func encode(into buffer: MTLCommandBuffer, renderer: CIContext) -> LiveEncode {
         guard window != nil, drawableSize.width > 0, drawableSize.height > 0,
-              let drawable = (layer as? CAMetalLayer)?.nextDrawable(),
-              encode(into: drawable.texture, commandBuffer: buffer, renderer: renderer) else { return nil }
-        return drawable
+              preview != nil || image != nil || loupe != nil else { return .idle }
+        guard let drawable = (layer as? CAMetalLayer)?.nextDrawable() else { return .failed("drawable unavailable") }
+        guard encode(into: drawable.texture, commandBuffer: buffer, renderer: renderer) else { return .failed("encoding failed") }
+        return .encoded(drawable)
     }
 
     /// Shared by the live drawable and GPU regression checks. Cache only a

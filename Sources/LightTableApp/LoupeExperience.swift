@@ -96,9 +96,15 @@ struct LoupeSceneKey: PreferenceKey {
             // Use the same direct tracking before, during, and after approach.
             // A brief hover exit retains the last point until input resumes.
             if anchor != nil, let pointer { anchor = pointer }
+            updateCursorVisibility()
         }
     }
-    var scene: LoupeSceneInput?
+    var scene: LoupeSceneInput? {
+        didSet { updateCursorVisibility() }
+    }
+    var cursorEnabled = false {
+        didSet { if cursorEnabled != oldValue { updateCursorVisibility() } }
+    }
     var closeMagnification: LoupeCloseMagnification = .original
     var viewingSize = CGSize.zero
     private(set) var anchor: CGPoint?
@@ -118,7 +124,7 @@ struct LoupeSceneKey: PreferenceKey {
         returnTask?.cancel()
         anchor = point
         isClose = true
-        if !cursorHidden { NSCursor.hide(); cursorHidden = true }
+        updateCursorVisibility()
         return true
     }
 
@@ -138,12 +144,25 @@ struct LoupeSceneKey: PreferenceKey {
     func cancel() {
         returnTask?.cancel()
         isClose = false
-        finishReturn()
+        anchor = nil
+        setCursorHidden(false)
     }
 
     private func finishReturn() {
         anchor = nil
-        if cursorHidden { NSCursor.unhide(); cursorHidden = false }
+        updateCursorVisibility()
+    }
+
+    private func updateCursorVisibility() {
+        // A visible ordinary lens owns the cursor too. Leaving the canvas or
+        // losing window/tool availability always releases that ownership.
+        setCursorHidden(cursorEnabled && scene != nil && pointer != nil)
+    }
+
+    private func setCursorHidden(_ hidden: Bool) {
+        guard hidden != cursorHidden else { return }
+        if hidden { NSCursor.hide() } else { NSCursor.unhide() }
+        cursorHidden = hidden
     }
 }
 
@@ -237,7 +256,7 @@ struct LoupeSampling {
         let originalRelativeScale = originalDepth.scale / originalDepth.apertureScale
         contentScale = blend == 0 ? originalRelativeScale : (blend == 1 ? 1 : 1 + (originalRelativeScale - 1) * (1 - blend))
         magnification = LoupeGeometry.magnification(for: diameter) * (relativeScale / contentScale)
-        refractionScale = 1 - 0.55 * LoupeGeometry.ease(progress)
+        refractionScale = 1 - 0.25 * LoupeGeometry.ease(progress)
     }
 
     func input(scene: LoupeSceneInput, displayScale: CGFloat) -> LoupeDisplayInput {
@@ -291,16 +310,6 @@ struct LoupeApproach: View, Animatable {
             LoupeSampledImage(input: sampling.input(scene: scene, displayScale: displayScale),
                               contentScale: sampling.contentScale, glass: glass)
                 .scaleEffect(depth.apertureScale).position(front)
-            Circle().strokeBorder(LinearGradient(colors: [Color(white: 0.42), Color(white: 0.08), .black, Color(white: 0.20)],
-                startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5)
-                .frame(width: LoupeGeometry.diameter * depth.apertureScale,
-                       height: LoupeGeometry.diameter * depth.apertureScale)
-                .position(front)
-                .opacity(glass.rimIntensity)
-            Circle().strokeBorder(.white.opacity(0.10 * (1 - progress)), lineWidth: 1)
-                .frame(width: LoupeGeometry.diameter * depth.apertureScale - 2,
-                       height: LoupeGeometry.diameter * depth.apertureScale - 2)
-                .position(front)
         }
         // This Animatable view already evaluates the approach clock. Descendants
         // must not start another position/scale animation when the pointer moves.
@@ -325,12 +334,12 @@ struct LoupeGlassPose: Equatable {
         approach = LoupeGeometry.ease(progress)
     }
     var angle: Double { Double(x * 14 + y * 8) }
-    // The housing recedes while the glass keeps a restrained surface reflection.
+    // Surface reflection softens as the eye approaches the clear glass.
     var rimIntensity: Double { 1 - Double(approach) }
     var intensity: Double { 0.45 + 0.55 * rimIntensity }
 }
 
-/// A dark inner bevel and bright outer lip give the clear glass a visible cross-section.
+/// A translucent pale cross-section replaces the opaque housing around the glass.
 struct LoupeGlassSurface: View {
     let pose: LoupeGlassPose
     let transmission: Double
@@ -340,11 +349,11 @@ struct LoupeGlassSurface: View {
             ZStack {
                 Circle().fill(RadialGradient(stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .clear, location: 0.952),
-                    .init(color: .black.opacity(0.035), location: 0.968),
-                    .init(color: .black.opacity(0.10), location: 0.982),
-                    .init(color: .white.opacity(0.055), location: 0.990),
-                    .init(color: .white.opacity(0.19), location: 0.996),
+                    .init(color: .clear, location: 0.946),
+                    .init(color: .black.opacity(0.075), location: 0.960),
+                    .init(color: Color(red: 0.86, green: 0.93, blue: 0.91).opacity(0.24), location: 0.976),
+                    .init(color: .white.opacity(0.38), location: 0.988),
+                    .init(color: .white.opacity(0.55), location: 0.996),
                     .init(color: .clear, location: 1)
                 ], center: .center, startRadius: 0, endRadius: radius))
                 Circle().fill(AngularGradient(stops: [
@@ -385,9 +394,11 @@ struct LoupeKeyboard: NSViewRepresentable {
     let released: () -> Void
     let cancelled: () -> Void
     let cycleMagnification: () -> Void
+    var availabilityChanged: (Bool) -> Void = { _ in }
 
     func makeNSView(context: Context) -> MonitorView { MonitorView() }
     func updateNSView(_ view: MonitorView, context: Context) {
+        view.availabilityChanged = availabilityChanged
         view.enabled = enabled; view.pressed = pressed
         view.released = released; view.cancelled = cancelled
         view.cycleMagnification = cycleMagnification
@@ -396,26 +407,42 @@ struct LoupeKeyboard: NSViewRepresentable {
     static func dismantleNSView(_ view: MonitorView, coordinator: ()) { view.stop() }
 
     final class MonitorView: NSView {
-        var enabled = false
+        var enabled = false {
+            didSet { updateAvailability() }
+        }
         var pressed: (() -> Bool)?
         var released: (() -> Void)?
         var cancelled: (() -> Void)?
         var cycleMagnification: (() -> Void)?
+        var availabilityChanged: ((Bool) -> Void)?
+        private var windowActive = false
         private var held = false
         private var tabHeld = false
         private var monitor: Any?
         private var resignObserver: NSObjectProtocol?
+        private var becomeObserver: NSObjectProtocol?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             stop()
             guard let window else { return }
+            windowActive = window.isKeyWindow
+            updateAvailability()
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
                 guard let self, event.window === self.window else { return event }
                 return self.handle(event)
             }
             resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
-                object: window, queue: .main) { [weak self] _ in self?.reset() }
+                object: window, queue: .main) { [weak self] _ in
+                    self?.windowActive = false
+                    self?.updateAvailability()
+                    self?.reset()
+                }
+            becomeObserver = NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification,
+                object: window, queue: .main) { [weak self] _ in
+                    self?.windowActive = true
+                    self?.updateAvailability()
+                }
         }
 
         func handle(_ event: NSEvent) -> NSEvent? {
@@ -441,14 +468,19 @@ struct LoupeKeyboard: NSViewRepresentable {
         }
 
         func reset() { held = false; tabHeld = false; cancelled?() }
+        private func updateAvailability() { availabilityChanged?(enabled && windowActive) }
         func stop() {
+            windowActive = false
+            updateAvailability()
             reset()
             if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil
             if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }; resignObserver = nil
+            if let becomeObserver { NotificationCenter.default.removeObserver(becomeObserver) }; becomeObserver = nil
         }
         deinit {
             if let monitor { NSEvent.removeMonitor(monitor) }
             if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+            if let becomeObserver { NotificationCenter.default.removeObserver(becomeObserver) }
         }
     }
 }

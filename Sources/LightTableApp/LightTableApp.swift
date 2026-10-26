@@ -49,7 +49,7 @@ struct LightTableApp: App {
                     .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
                 Button("整理全局", action: model.fitToWindow).keyboardShortcut("z", modifiers: .shift)
                     .disabled(model.isPreparingStartup || model.slideshowMode || FeatureGuideState.shared.welcomeVisible)
-                Button(model.selectedTrayForDeletion != nil ? "删除底栏" : (model.selectedIDs.count > 1 ? "收回所选 \(model.selectedIDs.count) 项到底栏" : "收回底栏"), action: model.deleteSelection)
+                Button(model.selectedTrayPhoto != nil ? "从底栏删除照片" : (model.selectedIDs.count > 1 ? "收回所选 \(model.selectedIDs.count) 项到底栏" : "收回底栏"), action: model.deleteSelection)
                     .keyboardShortcut(.delete, modifiers: [])
                     .disabled(model.isPreparingStartup || model.slideshowMode || model.albumEditorPresented || !model.canDeleteSelection || FeatureGuideState.shared.welcomeVisible)
             }

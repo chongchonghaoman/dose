@@ -7,7 +7,9 @@ private enum TableStyle {
     static let ink = Color(white: 0.16)
     static let secondary = Color(white: 0.40)
     static let chrome = Color(white: 0.97)
-    static let unlitPanel = Color(red: 0.89, green: 0.85, blue: 0.75)
+    static let unlitPanel = Color(red: LightResponse.unlitPanel.red,
+                                  green: LightResponse.unlitPanel.green,
+                                  blue: LightResponse.unlitPanel.blue)
 }
 
 struct ContentView: View {
@@ -124,7 +126,8 @@ struct ContentView: View {
                           pressed: { loupe.press() },
                           released: { loupe.release(reduceMotion: reduceMotion) },
                           cancelled: { loupe.cancel() },
-                          cycleMagnification: { loupe.cycleMagnification() }).frame(width: 0, height: 0)
+                          cycleMagnification: { loupe.cycleMagnification() },
+                          availabilityChanged: { loupe.cursorEnabled = $0 }).frame(width: 0, height: 0)
         }
         .task(id: flight?.phase == .dragging) {
             guard flight?.phase == .dragging else { return }
@@ -261,6 +264,7 @@ struct ContentView: View {
 
     private var tray: some View {
         let photos = model.trayPhotos
+        let trayID = model.activeTrayID
         let ink = Color(white: 0.92)
         let secondary = Color(white: 0.66)
         return VStack(alignment: .leading, spacing: 10) {
@@ -304,13 +308,18 @@ struct ContentView: View {
                     LazyHStack(alignment: .top, spacing: 0) {
                         ForEach(model.albums) { page in AlbumTrayCard(page: page, model: model) }
                         ForEach(photos) { photo in
-                            TrayPhoto(photo: photo, model: model, lifted: flight?.photo.url == photo.url,
+                            TrayPhoto(photo: photo, trayID: trayID, model: model, lifted: flight?.photo.url == photo.url,
                                       onPull: pullFromSleeve, onRelease: releaseFromSleeve, onTrackingEnded: {
                                           returnToSleeve(); cancelledPull = false
                                       })
                                 .opacity(model.slideshowMode ? 0 : 1)
                                 .contextMenu {
                                     Button("放到灯板中央") { model.placeAtViewCenter(photo.url) }
+                                    Button(role: .destructive) {
+                                        model.deletePhoto(photo.url, fromTray: trayID)
+                                    } label: {
+                                        Label("从底栏删除", systemImage: "trash")
+                                    }
                                     Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([photo.url]) }
                                 }
                         }
@@ -333,18 +342,24 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     ForEach(model.trays) { tray in
                         let selected = tray.id == model.activeTrayID
-                        Button { model.selectTrayForDeletion(tray.id) } label: {
+                        Button { model.selectTray(tray.id) } label: {
                             Text(tray.name).font(.system(size: 11, weight: selected ? .semibold : .regular))
                                 .lineLimit(1).frame(maxWidth: 120)
                                 .padding(.horizontal, 10).frame(height: 28)
                                 .foregroundStyle(selected ? Color.white : Color(white: 0.72))
                                 .background(selected ? Color(white: 0.22) : Color.clear, in: Capsule())
-                                .overlay(Capsule().strokeBorder(Color.white.opacity(model.selectedTrayForDeletion == tray.id ? 0.5 : 0), lineWidth: 1))
                         }
                         .buttonStyle(.plain).id(tray.id)
-                        .help("\(tray.name) · \(tray.urls.count) 张；点选后按 Delete 删除底栏")
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                model.deleteTray(tray.id)
+                            } label: {
+                                Label("删除底栏", systemImage: "trash")
+                            }
+                        }
+                        .help("\(tray.name) · \(tray.urls.count) 张；右键删除底栏")
                         .accessibilityLabel("\(tray.name)，\(tray.urls.count) 张照片")
-                        .accessibilityHint("点选后按 Delete 删除底栏")
+                        .accessibilityHint("点击切换底栏，右键菜单删除底栏")
                         .accessibilityAddTraits(selected ? .isSelected : [])
                     }
                 }
@@ -504,6 +519,7 @@ struct ContentView: View {
 
 private struct TrayPhoto: View {
     let photo: Photo
+    let trayID: UUID
     @Environment(\.displayScale) private var displayScale
     @Bindable var model: TableModel
     var lifted: Bool
@@ -514,11 +530,21 @@ private struct TrayPhoto: View {
     @State private var loaded = false
     @State private var hovered = false
     @GestureState private var pulling = false
+    private var selected: Bool {
+        model.selectedTrayPhoto == TrayPhotoSelection(trayID: trayID, url: photo.url.standardizedFileURL)
+    }
     var body: some View {
         VStack(spacing: 5) {
             FilmSleeve(image: image, failed: loaded && image == nil, highlighted: hovered, lifted: lifted)
                 .anchorPreference(key: SlideshowTrayAnchorsKey.self, value: .bounds) {
                     SlideshowTrayAnchors(photos: [photo.url: SlideshowTrayPhotoAnchor(bounds: $0, image: image)])
+                }
+                .overlay {
+                    if selected {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .strokeBorder(.white.opacity(0.8), lineWidth: 1.5)
+                            .allowsHitTesting(false).accessibilityHidden(true)
+                    }
                 }
                 .overlay {
                     GeometryReader { proxy in
@@ -528,16 +554,28 @@ private struct TrayPhoto: View {
                                 .onChanged { value in
                                     if let image { onPull(photo, image, proxy.frame(in: .named("workbench")), value) }
                                 }
-                                .onEnded(onRelease))
+                                .onEnded(onRelease)
+                                .exclusively(before: TapGesture().onEnded { _ in
+                                    model.selectTrayPhoto(photo.url, in: trayID)
+                                }))
                     }
                 }
             Text(photo.name).font(.system(size: 9)).lineLimit(1).frame(width: 94).padding(.horizontal, 5)
-        }.help(photo.url.lastPathComponent)
-        .onChange(of: pulling) { _, active in if !active { onTrackingEnded() } }
+                .contentShape(Rectangle())
+                .onTapGesture { model.selectTrayPhoto(photo.url, in: trayID) }
+        }.help("\(photo.url.lastPathComponent)；点选后按 Delete 从底栏删除")
+        .onChange(of: pulling) { _, active in
+            if active { model.setSelection([]) }
+            else { onTrackingEnded() }
+        }
         .onChange(of: model.thumbnails[photo.url] != nil) { _, available in
             if available, image == nil { image = model.thumbnails[photo.url] }
         }
-        .accessibilityLabel(photo.name + "，可拖到灯板")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(photo.name)
+        .accessibilityHint("点击选中后按 Delete 从底栏删除，也可拖到灯板")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { model.selectTrayPhoto(photo.url, in: trayID) }
         .task(id: photo.url) {
             image = model.thumbnails[photo.url] ?? PhotoThumbnailCache.cached(photo.url)
             if image == nil { image = await PhotoThumbnails.shared.thumbnail(photo.url) }
@@ -588,7 +626,11 @@ struct TableCanvas: View {
                 LoupeGeometry.sourceViewport(point: $0, in: loupe.viewingSize,
                     closeViewing: loupe.anchor != nil, mode: loupe.closeMagnification)
             }
-            let lensItems = sceneItems(viewport: viewport, offset: rect.origin)
+            let orderedIDs = model.tableIDs
+            let layerIndices = Dictionary(uniqueKeysWithValues:
+                orderedIDs.enumerated().map { ($0.element, Double($0.offset)) })
+            let lensItems = sceneItems(viewport: viewport, offset: rect.origin,
+                                       orderedIDs: orderedIDs)
             ZStack(alignment: .topLeading) {
                 LampPanel(isLit: model.isLit, targeted: targeted, transmission: light.transmission, flare: light.flare, glow: light.glow, brightness: model.lampBrightness)
                     .frame(width: proxy.size.width, height: proxy.size.height)
@@ -629,12 +671,12 @@ struct TableCanvas: View {
                     SlideView(model: model, slide: slide, boardSize: size, transmission: light.transmission, flare: light.flare, draggingID: $draggingID)
                         .opacity(slide.url == liftedPhoto ? 0 : 1)
                         .offset(x: rect.minX, y: rect.minY)
-                        .zIndex(model.layerIndex(slide.id) + 1)
+                        .zIndex((layerIndices[slide.id] ?? 0) + 1)
                 }
                 ForEach(model.onTableAlbums) { page in
                     AlbumTableView(page: page, model: model, transmission: light.transmission, flare: light.flare, draggingID: $draggingID)
                         .offset(x: rect.minX, y: rect.minY)
-                        .zIndex(model.layerIndex(page.id) + 1)
+                        .zIndex((layerIndices[page.id] ?? 0) + 1)
                 }
             }
             .overlay(alignment: .topLeading) {
@@ -721,21 +763,26 @@ struct TableCanvas: View {
         }
     }
 
-    private func sceneItems(viewport: CGRect?, offset: CGPoint) -> [(url: URL?, photo: LoupeScenePhoto)] {
+    private func sceneItems(viewport: CGRect?, offset: CGPoint,
+                            orderedIDs: [UUID]) -> [(url: URL?, photo: LoupeScenePhoto)] {
         guard let viewport else { return [] }
+        let slidesByID = Dictionary(model.layout.slides.map { ($0.id, $0) },
+                                    uniquingKeysWith: { first, _ in first })
+        let albumsByID = Dictionary(model.onTableAlbums.map { ($0.id, $0) },
+                                    uniquingKeysWith: { first, _ in first })
         var result: [(url: URL?, photo: LoupeScenePhoto)] = []
         func append(_ photo: LoupeScenePhoto, url: URL? = nil) {
             if photo.bounds.intersects(viewport) { result.append((url, photo)) }
         }
-        for id in model.tableIDs {
-            if let slide = model.layout.slides.first(where: { $0.id == id }) {
+        for id in orderedIDs {
+            if let slide = slidesByID[id] {
                 let preview = (model.preparedPreviews[slide.url] ?? lensPreviews[slide.url] ?? model.preparedTablePreviews[slide.url])?.viewing(transmitted: model.transmissionEnabled)
                 let aspect = preview.map { Double($0.aspect) } ?? model.imageAspects[slide.url] ?? 1.5
                 let p = livePlacements[slide.id] ?? model.screenPlacement(slide, aspect: aspect)
                 append(LoupeScenePhoto(preview: preview, thumbnail: model.thumbnails[slide.url],
                     center: CGPoint(x: p.x + offset.x, y: p.y + offset.y),
                     imageSize: CGSize(width: p.width, height: p.height), angle: p.angle, mountScale: model.zoom), url: slide.url)
-            } else if let page = model.albums.first(where: { $0.id == id && $0.position != nil }) {
+            } else if let page = albumsByID[id] {
                 let frame = model.albumFrame(page).offsetBy(dx: offset.x, dy: offset.y)
                 guard frame.intersects(viewport) else { continue }
                 func surface(_ front: Bool) {

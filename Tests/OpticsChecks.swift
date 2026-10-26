@@ -334,6 +334,175 @@ import LightTableCore
                 staleBuffer.commit()
             }
             check(staleView.cachedStableTexture == nil, "stale GPU completion cannot overwrite a replacement photograph")
+
+            // Drawable size changes: cached output must match a fresh, uncached surface.
+            func renderSized(_ surface: OpticalMetalView, _ width: Int, _ height: Int) async throws -> [UInt8] {
+                let sized = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+                sized.usage = [.shaderRead, .shaderWrite, .renderTarget]; sized.storageMode = .shared
+                let texture = gpu.makeTexture(descriptor: sized)!, buffer = queue.makeCommandBuffer()!
+                precondition(surface.encode(into: texture, commandBuffer: buffer, renderer: renderer), "sized surface failed to encode")
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    buffer.addCompletedHandler { _ in continuation.resume() }
+                    buffer.commit()
+                }
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    DispatchQueue.main.async { continuation.resume() }
+                }
+                precondition(buffer.status == .completed, "GPU rejected sized surface encoding")
+                var bytes = [UInt8](repeating: 0, count: width * height * 4)
+                bytes.withUnsafeMutableBytes { texture.getBytes($0.baseAddress!, bytesPerRow: width * 4,
+                    from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0) }
+                return bytes
+            }
+            let resizedView = OpticalMetalView()
+            resizedView.set(preview: markerPreview, image: nil, transmission: 1, flare: 0, brightness: 1)
+            for (width, height) in [(64, 64), (128, 96), (64, 64)] {
+                let first = try await renderSized(resizedView, width, height)
+                let reused = try await renderSized(resizedView, width, height)
+                let fresh = OpticalMetalView()
+                fresh.set(preview: markerPreview, image: nil, transmission: 1, flare: 0, brightness: 1)
+                let expected = try await renderSized(fresh, width, height)
+                check(first == expected && reused == expected && resizedView.cachedStableTexture?.width == width
+                      && resizedView.cachedStableTexture?.height == height,
+                      "cached surface matches an uncached surface after resizing to \(width)x\(height)")
+            }
+
+            // Retry budget and its production wiring, driven by an injected scheduler.
+            var retry = OpticalRetryBudget()
+            retry.beginNewInput()
+            let previousRevision = retry.revision
+            check(retry.nextDelay() == 1.0 / 60.0, "first retry is deferred")
+            check(retry.nextDelay() == 0.05, "second retry backs off")
+            check(retry.nextDelay() == 0.15, "third retry backs off")
+            check(retry.nextDelay() == nil, "retry budget is finite")
+            check(retry.nextDelay() == nil, "exhausted budget stays exhausted")
+            retry.beginNewInput()
+            check(retry.revision != previousRevision && retry.attempts == 0,
+                  "new input invalidates stale work and rearms retries")
+            _ = retry.nextDelay()
+            retry.succeeded()
+            check(retry.attempts == 0, "successful work clears failure count")
+
+            var queued: [(delay: TimeInterval, work: () -> Void)] = []
+            let liveScheduler = OpticalMetalView.scheduleRetry
+            OpticalMetalView.scheduleRetry = { queued.append(($0, $1)) }
+            let retryView = OpticalMetalView()
+            retryView.set(preview: preview, image: nil, transmission: 1, flare: 0, brightness: 1)
+            let firstRevision = retryView.retry.revision
+            retryView.noteDrawFailure("check")
+            check(queued.count == 1 && queued[0].delay == 1.0 / 60.0 && retryView.pendingRetry != nil,
+                  "visible draw failure schedules one deferred redraw")
+            retryView.noteDrawFailure("check")
+            check(queued.count == 1 && retryView.retry.attempts == 1,
+                  "repeated failures coalesce into the pending retry")
+            let staleRetry = queued.removeFirst().work
+            retryView.set(preview: markerPreview, image: nil, transmission: 1, flare: 0, brightness: 1)
+            check(retryView.retry.revision != firstRevision && retryView.pendingRetry == nil && retryView.retry.attempts == 0,
+                  "new input cancels the pending retry and rearms the budget")
+            retryView.noteDrawFailure("check")
+            let currentToken = retryView.pendingRetry
+            staleRetry()
+            check(currentToken != nil && retryView.pendingRetry == currentToken,
+                  "old input callback cannot affect the new input's retry")
+            queued.removeFirst().work()
+            check(retryView.pendingRetry == nil && queued.isEmpty,
+                  "windowless view consumes its retry without polling")
+            retryView.noteDrawFailure("check")
+            check(queued.count == 1 && queued[0].delay == 0.05, "next failure of the same input backs off")
+            queued.removeFirst().work()
+            retryView.noteDrawFailure("check")
+            check(queued.count == 1 && queued[0].delay == 0.15, "third failure of the same input backs off")
+            queued.removeFirst().work()
+            retryView.noteDrawFailure("check")
+            check(queued.isEmpty && retryView.pendingRetry == nil, "production retries stop at the budget")
+            retryView.set(preview: markerPreview, image: nil, transmission: 1, flare: 0, brightness: 1)
+            retryView.noteDrawFailure("check")
+            check(queued.isEmpty, "unchanged SwiftUI updates do not rearm an exhausted budget")
+            retryView.set(preview: markerPreview, image: nil, transmission: 0, flare: 0, brightness: 1)
+            retryView.noteDrawFailure("check")
+            check(queued.count == 1, "changed input can retry again after exhaustion")
+            let supersededRetry = queued.removeFirst().work
+            retryView.noteDrawSuccess()
+            check(retryView.pendingRetry == nil && retryView.retry.attempts == 0, "GPU success clears failure state")
+            supersededRetry()
+            check(retryView.pendingRetry == nil && queued.isEmpty, "success invalidates an already queued retry")
+            retryView.noteDrawFailure("check")
+            let detachRevision = retryView.retry.revision
+            let detachedRetry = queued.removeFirst().work
+            retryView.viewDidMoveToWindow()
+            detachedRetry()
+            check(retryView.retry.revision != detachRevision && retryView.pendingRetry == nil && queued.isEmpty,
+                  "window change cancels the queued retry")
+
+            // Drive the production batch's allocation-failure path without a window.
+            var bufferRequests = 0
+            func drawWithoutBuffer(_ views: [OpticalMetalView]) {
+                OpticalMetalView.drawVisible(views, renderer: renderer, makeCommandBuffer: {
+                    bufferRequests += 1
+                    return nil
+                })
+            }
+            let sizeRetryView = OpticalMetalView()
+            sizeRetryView.set(preview: preview, image: nil, transmission: 1, flare: 0, brightness: 1)
+            sizeRetryView.autoResizeDrawable = false
+            sizeRetryView.drawableSize = CGSize(width: 64, height: 64)
+            drawWithoutBuffer([sizeRetryView])
+            let sizeRevision = sizeRetryView.retry.revision
+            check(queued.count == 1 && queued[0].delay == 1.0 / 60.0,
+                  "command buffer allocation failure schedules the first retry")
+            queued.removeFirst().work()
+            for delay in [0.05, 0.15] {
+                drawWithoutBuffer([sizeRetryView])
+                check(queued.count == 1 && queued[0].delay == delay && sizeRetryView.retry.revision == sizeRevision,
+                      "same-size allocation failure retains its backoff at \(delay)")
+                queued.removeFirst().work()
+            }
+            drawWithoutBuffer([sizeRetryView])
+            check(queued.isEmpty && sizeRetryView.retry.attempts == 3 && sizeRetryView.pendingRetry == nil,
+                  "same-size allocation failures stop after three retries")
+            sizeRetryView.drawableSize = CGSize(width: 128, height: 96)
+            drawWithoutBuffer([sizeRetryView])
+            check(queued.count == 1 && queued[0].delay == 1.0 / 60.0 &&
+                  sizeRetryView.retry.revision != sizeRevision && sizeRetryView.retry.attempts == 1,
+                  "size change rearms an exhausted budget before command buffer allocation")
+            let oldSizeRetry = queued.removeFirst().work
+            sizeRetryView.drawableSize = CGSize(width: 192, height: 128)
+            drawWithoutBuffer([sizeRetryView])
+            let newSizeToken = sizeRetryView.pendingRetry
+            let newSizeRevision = sizeRetryView.retry.revision
+            oldSizeRetry()
+            check(queued.count == 1 && newSizeToken != nil && sizeRetryView.pendingRetry == newSizeToken,
+                  "old-size callback cannot clear the new size's pending retry")
+            drawWithoutBuffer([sizeRetryView])
+            check(queued.count == 1 && sizeRetryView.pendingRetry == newSizeToken &&
+                  sizeRetryView.retry.revision == newSizeRevision && sizeRetryView.retry.attempts == 1,
+                  "repeated same-size batches coalesce without resetting retry state")
+            queued.removeFirst().work()
+
+            let emptyView = OpticalMetalView()
+            emptyView.autoResizeDrawable = false
+            emptyView.drawableSize = CGSize(width: 64, height: 64)
+            let zeroWidthView = OpticalMetalView(), zeroHeightView = OpticalMetalView()
+            for view in [zeroWidthView, zeroHeightView] {
+                view.set(preview: preview, image: nil, transmission: 1, flare: 0, brightness: 1)
+                view.autoResizeDrawable = false
+            }
+            zeroWidthView.drawableSize = CGSize(width: 0, height: 64)
+            zeroHeightView.drawableSize = CGSize(width: 64, height: 0)
+            let idleViews = [emptyView, zeroWidthView, zeroHeightView]
+            let requestsBeforeIdle = bufferRequests
+            let idleRevisions = idleViews.map { $0.retry.revision }
+            drawWithoutBuffer(idleViews)
+            check(bufferRequests == requestsBeforeIdle && queued.isEmpty &&
+                  idleViews.allSatisfy { $0.retry.attempts == 0 && $0.pendingRetry == nil } &&
+                  idleViews.map { $0.retry.revision } == idleRevisions,
+                  "empty or zero-size surfaces skip allocation without spending retry budgets")
+            drawWithoutBuffer([sizeRetryView] + idleViews)
+            check(bufferRequests == requestsBeforeIdle + 1 && queued.count == 1 && queued[0].delay == 0.05 &&
+                  sizeRetryView.pendingRetry != nil && idleViews.allSatisfy { $0.pendingRetry == nil && $0.retry.attempts == 0 },
+                  "mixed batch allocation failure retries only surfaces with valid input and size")
+            queued.removeFirst().work()
+            OpticalMetalView.scheduleRetry = liveScheduler
         }
         print("\(count) optics checks passed")
     }

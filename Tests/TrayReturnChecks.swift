@@ -58,9 +58,13 @@ import LightTableCore
         check(restored.activeTrayID == secondTray && restored.trayPhotos.map(\.url) == [d], "restart restores current tray selection")
         restored.selectTray(firstTray)
         check(restored.trayPhotos.map(\.url) == originalOrder.filter { $0 != b }, "restart hides already-placed films in their original tray")
-        restored.select(restored.layout.slides.first { $0.url == b }!.id)
+        let restoredBID = restored.layout.slides.first { $0.url == b }!.id
+        restored.select(restoredBID)
         restored.selectTray(secondTray)
-        restored.removeSelected()
+        check(restored.selectedIDs.isEmpty && !restored.canDeleteSelection,
+              "switching trays clears the old table selection before Delete")
+        restored.select(restoredBID)
+        restored.deleteSelection()
         check(restored.trayPhotos.map(\.url) == [d], "Delete after restart and tray switch does not redirect the returned film")
         restored.selectTray(firstTray)
         check(restored.trayPhotos.map(\.url) == originalOrder, "returned film's original order survives restart")

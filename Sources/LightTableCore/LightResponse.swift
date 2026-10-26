@@ -15,6 +15,8 @@ public struct LightResponseSample: Equatable, Sendable {
 }
 
 public enum LightResponse {
+    // Shared by the tabletop and the lens so their unlit surfaces match.
+    public static let unlitPanel = (red: 0.84, green: 0.81, blue: 0.70)
     public static let lampRiseDuration: TimeInterval = 0.12
     public static let peakTime: TimeInterval = 0.16
     public static let bloomReleaseTime: TimeInterval = 0.28

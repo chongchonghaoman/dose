@@ -67,18 +67,18 @@ final class LoupeRenderer {
     private let context = CIContext(options: [.cacheIntermediates: false,
         .workingColorSpace: CGColorSpace(name: CGColorSpace.displayP3)!])
     // A bounded, monotonic radial warp: no torus, foldover, or sampled ring.
-    // Keep the central 72% straight, then smoothly change the local scale.
-    // The 1.6% displacement cap keeps the radial derivative above 0.875.
+    // Keep the central 75% straight, then smoothly change the local scale.
+    // The 3.2% displacement cap preserves monotonic radial sampling.
     // Keep ROI and cropped-scene coverage in step with this kernel's bound.
-    private static let maximumRefractionInset: CGFloat = 0.016
+    private static let maximumRefractionInset: CGFloat = 0.032
     private let edgeKernel = CIWarpKernel(source: """
         kernel vec2 loupeEdge(vec2 centre, float radius, float strength) {
             vec2 delta = destCoord() - centre;
             float distance = length(delta);
             float r = distance / radius;
-            float shoulder = smoothstep(0.72, 1.0, r);
+            float shoulder = smoothstep(0.75, 1.0, r);
             float lip = smoothstep(0.94, 1.0, r);
-            float inset = radius * (0.014 * shoulder + 0.002 * lip) * strength;
+            float inset = radius * (0.028 * shoulder + 0.004 * lip) * strength;
             return centre + delta * (1.0 - inset / max(distance, 0.001));
         }
         """)
@@ -141,9 +141,10 @@ final class LoupeRenderer {
             .insetBy(dx: -sourcePadding, dy: -sourcePadding)
         let light = min(1, max(0, transmission))
         let white = LightResponse.panelWhite(brightness: brightness, flare: flare)
-        let panel = CIImage(color: CIColor(red: 0.89 * (1 - light) + white * light,
-                                           green: 0.85 * (1 - light) + white * light,
-                                           blue: 0.75 * (1 - light) + white * light))
+        let unlit = LightResponse.unlitPanel
+        let panel = CIImage(color: CIColor(red: unlit.red * (1 - light) + white * light,
+                                           green: unlit.green * (1 - light) + white * light,
+                                           blue: unlit.blue * (1 - light) + white * light))
         let black = CIImage(color: CIColor(red: 0.025, green: 0.025, blue: 0.025))
         let panelRect = panelBounds.map {
             CGRect(x: centre.x + ($0.minX - point.x) * factor,

@@ -9,13 +9,18 @@ struct PhotoTray: Identifiable, Codable, Equatable {
     var urls: [URL] = []
 }
 
+struct TrayPhotoSelection: Equatable {
+    let trayID: UUID
+    let url: URL
+}
+
 @MainActor
 @Observable
 final class TableModel {
     static let defaultLampBrightness = 1.0
     private(set) var trays = [PhotoTray(name: "底栏 1")]
     private var selectedTrayID: UUID?
-    private(set) var selectedTrayForDeletion: UUID?
+    private(set) var selectedTrayPhoto: TrayPhotoSelection?
     private var activeTrayIndex: Int { trays.firstIndex { $0.id == selectedTrayID } ?? 0 }
     var activeTrayID: UUID { trays[activeTrayIndex].id }
     // Existing tray actions read only the selected tray. The table stays shared.
@@ -296,31 +301,34 @@ final class TableModel {
         let tray = PhotoTray(name: "底栏 \(number)")
         trays.append(tray)
         selectedTrayID = tray.id
-        selectedTrayForDeletion = nil
+        selectedTrayPhoto = nil
         save()
         return tray.id
     }
 
     func selectTray(_ id: UUID) {
         guard trays.contains(where: { $0.id == id }) else { return }
-        selectedTrayForDeletion = nil
+        setSelection([])
         guard id != activeTrayID else { return }
         selectedTrayID = id
         save()
     }
 
-    func selectTrayForDeletion(_ id: UUID) {
-        guard trays.contains(where: { $0.id == id }) else { return }
-        selectTray(id)
+    func selectTrayPhoto(_ url: URL, in trayID: UUID) {
+        let canonical = url.standardizedFileURL
+        guard trayID == activeTrayID,
+              trays[activeTrayIndex].urls.contains(where: { $0.standardizedFileURL == canonical }) else { return }
         setSelection([])
-        selectedTrayForDeletion = id
+        selectedTrayPhoto = TrayPhotoSelection(trayID: trayID, url: canonical)
     }
 
-    var canDeleteSelection: Bool { selectedTrayForDeletion != nil || !selectedIDs.isEmpty }
+    var canDeleteSelection: Bool { selectedTrayPhoto != nil || !selectedIDs.isEmpty }
 
     func deleteSelection() {
-        if let id = selectedTrayForDeletion { deleteTray(id) }
-        else { removeSelected() }
+        if let photo = selectedTrayPhoto {
+            selectedTrayPhoto = nil
+            deletePhoto(photo.url, fromTray: photo.trayID)
+        } else { removeSelected() }
     }
 
     func deleteTray(_ id: UUID) {
@@ -336,7 +344,22 @@ final class TableModel {
         // targeting the deleted last tray cannot repopulate it.
         if trays.isEmpty { trays = [PhotoTray(name: "底栏 1")] }
         if wasActive { selectedTrayID = trays[min(index, trays.count - 1)].id }
-        selectedTrayForDeletion = nil
+        selectedTrayPhoto = nil
+        if layout.slides.isEmpty { fitScale = 1 }
+        trimReturnedPhotoPreviews()
+        save()
+    }
+
+    func deletePhoto(_ url: URL, fromTray trayID: UUID) {
+        let canonical = url.standardizedFileURL
+        guard let trayIndex = trays.firstIndex(where: { $0.id == trayID }),
+              trays[trayIndex].urls.contains(where: { $0.standardizedFileURL == canonical }) else { return }
+        trays[trayIndex].urls.removeAll { $0.standardizedFileURL == canonical }
+        let removedIDs = Set(layout.slides.filter { $0.url.standardizedFileURL == canonical }.map(\.id))
+        for id in removedIDs { layout.remove(id) }
+        tableOrder.removeAll { removedIDs.contains($0) }
+        selectedIDs.subtract(removedIDs)
+        selectedTrayPhoto = nil
         if layout.slides.isEmpty { fitScale = 1 }
         trimReturnedPhotoPreviews()
         save()
@@ -392,7 +415,7 @@ final class TableModel {
     }
 
     func setSelection(_ ids: Set<UUID>) {
-        selectedTrayForDeletion = nil
+        selectedTrayPhoto = nil
         let valid = ids.intersection(tableIDs)
         if valid != selectedIDs { selectedIDs = valid }
         selectionIndicatorsVisible = true
@@ -400,7 +423,7 @@ final class TableModel {
 
     func select(_ id: UUID, extending: Bool = false, showIndicator: Bool = true) {
         guard tableIDs.contains(id) else { return }
-        selectedTrayForDeletion = nil
+        selectedTrayPhoto = nil
         // Dragging still targets the item for Delete and raises it above other
         // films, but only an explicit click or marquee draws selection chrome.
         selectionIndicatorsVisible = showIndicator
@@ -584,8 +607,9 @@ final class TableModel {
     var onTableAlbums: [AlbumPage] { albums.filter { $0.position != nil } }
     var tableIDs: [UUID] {
         let available = layout.slides.map(\.id) + onTableAlbums.map(\.id)
+        let availableSet = Set(available)
         var seen = Set<UUID>()
-        return (tableOrder + available).filter { available.contains($0) && seen.insert($0).inserted }
+        return (tableOrder + available).filter { availableSet.contains($0) && seen.insert($0).inserted }
     }
     func layerIndex(_ id: UUID) -> Double { Double(tableIDs.firstIndex(of: id) ?? 0) }
     private func synchronizeOrder() { tableOrder = tableIDs }
