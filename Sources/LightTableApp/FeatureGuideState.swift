@@ -24,11 +24,11 @@ enum FeatureGuideTarget: Hashable {
 @MainActor @Observable
 final class FeatureGuideState {
     static let shared = FeatureGuideState()
-    static let releaseVersion = "0.1.74"
+    static let releaseVersion = "0.1.75"
     static let seenKey = "featureGuide.presentedVersions"
     static let seenRevisionKey = "featureGuide.presentedRevisions"
-    static let contentRevision = "deletion-1"
-    static let tourStepCount = 6
+    static let contentRevision = "lighting-notes-1"
+    static let tourStepCount = 0
 
     enum Phase: Equatable {
         case idle
@@ -84,7 +84,7 @@ final class FeatureGuideState {
     }
 
     func beginTour(in window: UUID) {
-        guard isWelcome(in: window) else { return }
+        guard isWelcome(in: window), Self.tourStepCount > 0 else { return }
         phase = .tour(0)
     }
 

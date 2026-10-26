@@ -13,13 +13,14 @@ struct LoupeMagnificationControl: View {
 
     var body: some View {
         let thumbOffset = draggedOffset ?? selectedOffset
+        let thumbAnimation: Animation? = reduceMotion || draggedOffset != nil ? nil : .easeOut(duration: 0.20)
         ZStack(alignment: .leading) {
-            Capsule().fill(.white)
+            Capsule().fill(Color(white: 0.15))
                 .frame(width: segmentWidth, height: 30)
                 .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
                 .offset(x: thumbOffset)
                 // Follow the hand directly; animate only clicks and release.
-                .animation(reduceMotion || draggedOffset != nil ? nil : .easeOut(duration: 0.20), value: thumbOffset)
+                .animation(thumbAnimation, value: thumbOffset)
                 .allowsHitTesting(false)
             HStack(spacing: spacing) {
                 ForEach(LoupeCloseMagnification.allCases, id: \.self) { mode in
@@ -34,6 +35,24 @@ struct LoupeMagnificationControl: View {
                     .accessibilityAddTraits(selection == mode ? .isSelected : [])
                 }
             }
+        }
+        .overlay(alignment: .leading) {
+            // White lettering follows the thumb, including partial drags.
+            HStack(spacing: spacing) {
+                ForEach(LoupeCloseMagnification.allCases, id: \.self) { mode in
+                    Text(mode.title)
+                        .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                        .frame(width: segmentWidth, height: 30)
+                }
+            }
+            .foregroundStyle(.white)
+            .mask(alignment: .leading) {
+                Capsule().frame(width: segmentWidth, height: 30)
+                    .offset(x: thumbOffset)
+                    .animation(thumbAnimation, value: thumbOffset)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
         .contentShape(Capsule())
         .highPriorityGesture(DragGesture(minimumDistance: 3)

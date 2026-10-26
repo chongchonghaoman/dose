@@ -36,23 +36,18 @@ struct FeatureGuideWelcome: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("观片台已更新").font(.system(size: 21, weight: .semibold))
-                    Text("v\(version) · 删除更顺手，观片更稳定")
+                    Text("v\(version) · 开灯响应与倍率显示")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }.padding(.bottom, 24)
-            feature("rectangle.split.3x1", title: "单张按 Delete，整栏用右键",
-                    text: "点选底栏照片按 Delete，右键标签删除整栏。\n删除会一并移除台面对应散片，原图保留。",
-                    note: "在台面选中照片按 Delete，仍是收回原底栏。")
+            feature("sun.max", title: "开灯瞬间过曝调整",
+                    text: "开灯时短暂过曝调整为最高 +0.8 EV。\n点亮与回落节奏保持，随后恢复原有亮度。")
             Divider().padding(.vertical, 19)
-            feature("plus.magnifyingglass", title: "通透镜缘，适度外围折射",
-                    text: "镜片中心保持清晰，外围曲率更容易看见。\n透明镜缘保留柔和反光，按住空格凑近看。")
-            Divider().padding(.vertical, 19)
-            feature("photo.on.rectangle", title: "多图观片，显示更稳定",
-                    text: "修复镜内画面闪烁，改善多图浏览卡顿。\n拖动、整理台面和凑近观察时，画面衔接更稳。")
+            feature("plus.magnifyingglass", title: "当前倍率更清楚",
+                    text: "选中的倍率改为黑底白字，与幻灯片按钮一致。\n点击、拖动和 Tab 切换方式保持不变。")
             HStack(spacing: 10) {
                 Spacer()
-                Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle())
-                Button("看看怎么用", action: tour).buttonStyle(FeatureGuideButtonStyle(primary: true))
+                Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle(primary: true))
                     .keyboardShortcut(.defaultAction)
             }.padding(.top, 30)
             Text("以后可在「帮助 → 本次更新」重看")
@@ -65,7 +60,7 @@ struct FeatureGuideWelcome: View {
         .overlay(alignment: .topTrailing) {
             Button(action: close) { Image(systemName: "xmark").font(.system(size: 11)).frame(width: 26, height: 26) }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
-                .accessibilityLabel("关闭新功能指引").padding(10)
+                .accessibilityLabel("关闭更新说明").padding(10)
         }
         .onExitCommand(perform: close)
     }

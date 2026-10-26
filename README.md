@@ -6,7 +6,7 @@
 
 A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
 
-v0.1.74 支持点选底栏照片后按 Delete 删除单张，整栏删除改用标签右键；调整透明镜缘和外围折射，修复镜内闪烁并优化多图显示。完整内容见 [更新说明](docs/releases/v0.1.74.md)。
+v0.1.75 将开灯瞬间过曝调整为最高 +0.8 EV，倍率选中项改为幻灯片按钮同款黑底白字。完整内容见 [更新说明](docs/releases/v0.1.75.md)。
 
 ## 下载与运行
 
@@ -16,9 +16,9 @@ v0.1.74 支持点选底栏照片后按 Delete 删除单张，整栏删除改用�
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-当前版本 **[v0.1.74](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.74)**：台面照片按 Delete 收回原栏；底栏照片按 Delete 删除单张，右键底栏标签删除整栏。删除底栏内容时一起移除台面对应散片，磁盘原图保留。
+当前版本 **[v0.1.75](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.75)**：开灯瞬间最高 +0.8 EV，沿用原有回落节奏；倍率选中项使用黑底白字，操作方式保持。
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.74/LightTable-v0.1.74-macOS-arm64.zip)**
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.75/LightTable-v0.1.75-macOS-arm64.zip)**
 
 从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
 
@@ -32,9 +32,9 @@ v0.1.74 支持点选底栏照片后按 Delete 删除单张，整栏删除改用�
 - 下载或网络错误可重试，不修改现有应用；更新包由GitHub Releases提供。
 - v0.1.70起提供签名更新源。发行维护说明见 [发布步骤](docs/RELEASING.md)。
 
-## 新功能指引
+## 本版更新说明
 
-首次打开v0.1.74时显示本次更新卡片，介绍删除操作、透明镜片与显示稳定性；可直接开始观片，或选择「看看怎么用」。六步提示依次介绍导入与分栏、取片与原栏收回、单张 Delete 与整栏右键删除、选择放大镜、空格凑近和倍率切换，可跳过或回退。本次内容仅自动展示一次，保留旧版指引记录；菜单「帮助 → 本次更新…」可以重看，指引不会自动改变照片或台面布局。
+首次打开v0.1.75时显示简短说明，介绍开灯瞬间过曝和倍率选中样式。点击「开始观片」继续；本版没有新增操作，不显示额外操作指引。本次说明仅自动展示一次，菜单「帮助 → 本次更新…」可以重看。旧版操作指南保留在文档中。
 
 ## 功能
 

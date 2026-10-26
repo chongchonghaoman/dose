@@ -39,10 +39,11 @@ import LightTableCore
                                          brightness: brightness)
         }
         let middle = image(0.18), brightScene = image(0.65)
-        let peakMiddle = pixel(exposed(middle, time: 0.16))[0]
-        check(peakMiddle > 0.26 && peakMiddle < 0.29, "ignition has a visible, bounded exposure peak")
-        check(pixel(exposed(brightScene, time: 0.16))[0] > 0.88 && pixel(exposed(brightScene, time: 0.16))[0] < 0.96, "ignition retains moderately bright scene detail")
-        check(abs(pixel(exposed(middle, time: 0.28))[0] - peakMiddle) < 0.001, "overexposure holds before recovery")
+        let peakMiddle = pixel(exposed(middle, time: LightResponse.peakTime))[0]
+        check(peakMiddle > 0.31 && peakMiddle < 0.32, "trial ignition raises midtones by 0.8 stops within SDR")
+        check(pixel(exposed(brightScene, time: LightResponse.peakTime))[0] > 0.94 && pixel(exposed(brightScene, time: LightResponse.peakTime))[0] < 0.96,
+              "reduced trial peak retains bright scene detail below white")
+        check(abs(pixel(exposed(middle, time: 0.28))[0] - peakMiddle) < 0.001, "overexposure holds briefly before recovery")
         var lastExposure = peakMiddle
         for step in 0...24 {
             let value = pixel(exposed(middle, time: 0.28 + Double(step) * 0.82 / 24))[0]
@@ -50,20 +51,20 @@ import LightTableCore
             lastExposure = value
         }
         check(abs(lastExposure - 0.18) < 0.002, "recovery restores the original steady exposure exactly")
-        check(abs(pixel(exposed(middle, time: 1.10))[0] - 0.18) < 0.002, "exposure is fully restored at 1.10 seconds")
-        check(pixel(exposed(image(0), time: 0.16))[0] < 0.001 &&
-              pixel(exposed(image(0.002), time: 0.16))[0] < 0.003, "ignition preserves opaque black film")
-        check(pixel(exposed(middle, time: 0.16, brightness: 0.1))[0] < peakMiddle, "dim lamp also limits ignition exposure")
+        check(abs(pixel(exposed(middle, time: 1.10))[0] - 0.18) < 0.002, "photo exposure restores exactly at 1.10 seconds")
+        check(pixel(exposed(image(0), time: LightResponse.peakTime))[0] < 0.001 &&
+              pixel(exposed(image(0.002), time: LightResponse.peakTime))[0] < 0.003, "exposure keeps black film intact")
+        check(pixel(exposed(middle, time: LightResponse.peakTime, brightness: 0.1))[0] < peakMiddle, "dim lamp also limits ignition exposure")
         var lastHighlight: Float = 0
         for tone: CGFloat in [0.55, 0.65, 0.75, 0.85, 0.94, 0.98, 1] {
-            let value = pixel(exposed(image(tone), time: 0.16))[0]
+            let value = pixel(exposed(image(tone), time: LightResponse.peakTime))[0]
             check(value > lastHighlight && value <= 1.002 && value + 0.002 >= Float(tone),
                   "ignition shoulder preserves highlight separation at tone \(tone)")
             lastHighlight = value
         }
         let ignitionColor = image(0.85, 0.30, 0.09)
         let ignitionBase = pixel(CIImage(cgImage: ignitionColor))
-        let ignitionPeak = pixel(exposed(ignitionColor, time: 0.16))
+        let ignitionPeak = pixel(exposed(ignitionColor, time: LightResponse.peakTime))
         check(abs(ignitionBase[1] / ignitionBase[0] - ignitionPeak[1] / ignitionPeak[0]) < 0.003 &&
               abs(ignitionBase[2] / ignitionBase[0] - ignitionPeak[2] / ignitionPeak[0]) < 0.003,
               "ignition shoulder retains saturated highlight hue")
@@ -143,13 +144,13 @@ import LightTableCore
               "lens and tabletop use identical ignition exposure")
         for power in [0.1, 1, 1.6] {
             var previousPanel: Float = 2
-            for time in [0.16, 0.28, 0.45, 0.80, 1.10] {
+            for time in [0.16, 0.28, 0.45, 0.69, 0.80, 1.10] {
                 let response = LightResponse.sample(elapsed: time, isLit: true)
                 let panel = LoupeRenderer.shared.composite(photos: [], point: .zero,
                     diameter: 32, magnification: 1.5, displayScale: 1,
                     transmission: response.transmission, flare: response.flare, brightness: power, refracts: false)!
                 let white = CGFloat(LightResponse.panelWhite(brightness: power, flare: response.flare))
-                let tablePanel = CIImage(color: CIColor(red: white, green: white, blue: white))
+                let tablePanel = CIImage(color: CIColor(red: white, green: white, blue: white)).cropped(to: bounds)
                 let value = pixel(panel, x: 16, y: 16)[0]
                 check(abs(value - pixel(tablePanel)[0]) < 0.002 && value <= previousPanel + 0.002,
                       "lens panel matches table during recovery at power \(power), time \(time)")

@@ -48,7 +48,7 @@ public enum LightResponse {
 
     /// Shared ignition exposure: brief overexposure, then exact steady brightness.
     public static func photoExposureStops(flare: Double, brightness: Double) -> Double {
-        0.60 * photoGlowMix(flare: flare, brightness: brightness)
+        0.80 * photoGlowMix(flare: flare, brightness: brightness)
     }
 
     /// Time since OFF -> ON. Transmission rises first, then panel white,
