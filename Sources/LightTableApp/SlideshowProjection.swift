@@ -6,12 +6,15 @@ struct ProjectionPhoto: @unchecked Sendable {
     let url: URL
     let sharp: CGImage
     let soft: CGImage
-    let glow: CGImage?
-    let glowOutset: CGFloat
+    let preview: PhotoPreview
+    let defocusedPreview: PhotoPreview
 
-    init(url: URL, sharp: CGImage, soft: CGImage, glow: CGImage? = nil, glowOutset: CGFloat = 0) {
+    init(url: URL, sharp: CGImage, soft: CGImage) {
         self.url = url; self.sharp = sharp; self.soft = soft
-        self.glow = glow; self.glowOutset = glowOutset
+        // These references share the prepared pixels. EDR is applied by the
+        // same live display path as the table, after aperture preparation.
+        preview = PhotoPreview(source: sharp, lit: sharp, dark: sharp, flare: sharp, transmitted: false)
+        defocusedPreview = PhotoPreview(source: soft, lit: soft, dark: soft, flare: soft, transmitted: false)
     }
 
     var aspect: CGFloat { CGFloat(sharp.width) / CGFloat(sharp.height) }
@@ -23,7 +26,7 @@ struct ProjectionPhoto: @unchecked Sendable {
     }
 }
 
-/// Image work runs off the main actor. Animation composites static bitmaps.
+/// Aperture and temporary focus images are prepared off the main actor.
 actor SlideshowProjectionStore {
     static let shared = SlideshowProjectionStore()
     private let context = CIContext(options: [.cacheIntermediates: false])
@@ -54,8 +57,8 @@ actor SlideshowProjectionStore {
         let radius = max(2, longest * 0.012)
         var alpha = [UInt8](repeating: 255, count: width * height)
         var illumination = alpha
-        // Bake the lens falloff and aperture edge once, keeping the central
-        // image unchanged. Animation only moves these completed rasters.
+        // Keep the original narrow aperture and corner falloff. Steady photo
+        // detail stays sharp; only the brief arrival uses a defocused bitmap.
         for y in 0..<height {
             if y.isMultiple(of: 64), Task.isCancelled { return nil }
             let dy = min(CGFloat(y) + 0.5, CGFloat(height - y) - 0.5)
@@ -99,17 +102,7 @@ actor SlideshowProjectionStore {
             .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: max(0.8, longest * 0.0012)])
             .cropped(to: extent)
         guard let sharp = masked(input), let soft = masked(blurred), !Task.isCancelled else { return nil }
-        // A small, cached colour spill surrounds the aperture. It is not a
-        // full-screen glow and needs no live blur or steady animation clock.
-        let scale = min(1, 500 / longest)
-        let small = CIImage(cgImage: sharp).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        let padding = (longest * scale * 0.10).rounded(.up)
-        let glowExtent = small.extent.insetBy(dx: -padding, dy: -padding).integral
-        let scattered = small.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: max(1, longest * scale * 0.025)])
-        let glow = context.createCGImage(scattered, from: glowExtent, format: .RGBA8,
-                                        colorSpace: source.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB))
-        return ProjectionPhoto(url: url, sharp: sharp, soft: soft, glow: glow,
-                               glowOutset: padding / (longest * scale))
+        return ProjectionPhoto(url: url, sharp: sharp, soft: soft)
     }
 }
 

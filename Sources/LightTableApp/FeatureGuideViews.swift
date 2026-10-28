@@ -60,8 +60,10 @@ struct FeatureGuideWelcome: View {
             feature("keyboard", title: "随时切换，凑近对照",
                     text: "点击顶部「背光 EDR」，或按 E 切换。\n按住空格凑近照片时，也能按 E 对照观看。")
             Divider().padding(.vertical, 18)
-            feature("slider.horizontal.3", title: "亮度随模式切换",
-                    text: "EDR 亮度固定为 120%，右侧滑块平滑收起。\n回到普通模式，滑块展开并恢复之前的亮度。")
+            feature("slider.horizontal.3", title: "亮度自由调节",
+                    text: "EDR 默认 120%，可用右侧滑块调节。\n双击恢复默认；切换模式保留各自的亮度。")
+            Label("优化幻灯片音效", systemImage: "speaker.wave.2")
+                .font(.system(size: 13)).foregroundStyle(.secondary).padding(.top, 18)
             HStack(spacing: 10) {
                 Spacer()
                 Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle(primary: true))

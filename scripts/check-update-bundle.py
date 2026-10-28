@@ -55,7 +55,7 @@ def validate(app, feed=None):
             "no external development library dependencies")
     rpaths = subprocess.check_output(["otool", "-l", str(binary)], text=True)
     require("@executable_path/../Frameworks" in rpaths, "bundled framework runtime search path")
-    for name in ("ShutterClick", "ShutterClickRoom", "ShutterArrivalRoom"):
+    for name in ("ShutterClick", "ShutterClickRoom", "ShutterArrivalRoom", "SlideChange", "ProjectorStart"):
         original = ROOT / f"Sources/LightTableApp/Resources/{name}.wav"
         bundled = app / f"Contents/Resources/{name}.wav"
         require(hashlib.sha256(original.read_bytes()).digest() == hashlib.sha256(bundled.read_bytes()).digest(),
@@ -100,7 +100,7 @@ def validate(app, feed=None):
                    for entry in package.infolist()}
         packaged_info = plistlib.loads(package.read(entries["观片台.app/Contents/Info.plist"]))
         require(packaged_info == info, "archive contains the verified application")
-        for name in ("ShutterClick", "ShutterClickRoom", "ShutterArrivalRoom"):
+        for name in ("ShutterClick", "ShutterClickRoom", "ShutterArrivalRoom", "SlideChange", "ProjectorStart"):
             require(package.read(entries[f"观片台.app/Contents/Resources/{name}.wav"]) ==
                     (app / f"Contents/Resources/{name}.wav").read_bytes(), f"archive contains {name}")
         require(all(hashlib.sha256(package.read(entries[f"观片台.app/Contents/Resources/ReturnToPast/{name}"])).digest() == digest

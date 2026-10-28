@@ -11,6 +11,8 @@ let package = Package(
         .target(name: "LightTableCore", dependencies: ["LightTableEDR"]),
         .executableTarget(name: "LightTableApp", dependencies: ["LightTableCore", "LightTableEDR", .product(name: "Sparkle", package: "Sparkle")],
                           resources: [.process("Resources/ShutterClick.wav"),
+                                      .process("Resources/SlideChange.wav"),
+                                      .process("Resources/ProjectorStart.wav"),
                                       .process("Resources/ShutterClickRoom.wav"),
                                       .process("Resources/ShutterArrivalRoom.wav"),
                                       .copy("Resources/FilmTransmission.cube"),

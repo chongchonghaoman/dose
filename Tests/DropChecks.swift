@@ -27,36 +27,48 @@ struct DropChecks {
         }
         let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
         let original = try file("originals/one.png", image)
-        let fixedEDR = TableModel(restore: false)
-        try check(fixedEDR.backlightEDREnabled && fixedEDR.lampBrightness == 1.2,
-                  "new table defaults to fixed 120 percent EDR brightness")
-        for attempted in [0.1, 1.0, 1.6, Double.nan] {
-            fixedEDR.lampBrightness = attempted
-            try check(fixedEDR.lampBrightness == 1.2,
-                      "EDR ignores brightness adjustment while unlit: \(attempted)")
+        let adjustableEDR = TableModel(restore: false)
+        try check(!adjustableEDR.backlightEDREnabled && adjustableEDR.lampBrightness == 1.0,
+                  "new table starts with EDR off and ordinary 100 percent brightness")
+        adjustableEDR.backlightEDREnabled = true
+        try check(adjustableEDR.lampBrightness == 1.2 && adjustableEDR.lampBrightnessDefault == 1.2,
+                  "enabling EDR starts at its adjustable 120 percent default")
+        for attempted in [0.1, 1.0, 1.6] {
+            adjustableEDR.lampBrightness = attempted
+            try check(adjustableEDR.lampBrightness == attempted && adjustableEDR.edrBrightness == attempted,
+                      "EDR accepts brightness adjustments while unlit: \(attempted)")
         }
-        fixedEDR.backlightEDREnabled = false
-        try check(fixedEDR.lampBrightness == 1.0,
+        for invalid in [Double.nan, .infinity, -.infinity] {
+            adjustableEDR.lampBrightness = invalid
+            try check(adjustableEDR.lampBrightness == 1.6, "invalid EDR brightness preserves the last valid setting")
+        }
+        adjustableEDR.lampBrightness = 0
+        try check(adjustableEDR.lampBrightness == 0.1, "EDR brightness respects the slider minimum")
+        adjustableEDR.lampBrightness = 2
+        try check(adjustableEDR.lampBrightness == 1.6, "EDR brightness respects the slider maximum")
+        adjustableEDR.lampBrightness = 0.84
+        adjustableEDR.backlightEDREnabled = false
+        try check(adjustableEDR.lampBrightness == 1.0 && adjustableEDR.lampBrightnessDefault == 1.0,
                   "ordinary mode retains its default 100 percent brightness")
-        fixedEDR.lampBrightness = 0.72
-        try check(fixedEDR.lampBrightness == 0.72, "ordinary mode remains adjustable")
-        fixedEDR.isLit = true
-        let fixedEDRStart = fixedEDR.lightStartedAt
+        adjustableEDR.lampBrightness = 0.72
+        try check(adjustableEDR.lampBrightness == 0.72 && adjustableEDR.edrBrightness == 0.84,
+                  "ordinary mode remains adjustable without overwriting the EDR setting")
+        adjustableEDR.isLit = true
+        let adjustableEDRStart = adjustableEDR.lightStartedAt
         for _ in 0..<2 {
-            fixedEDR.backlightEDREnabled = true
-            fixedEDR.lampBrightness = 1.6
-            try check(fixedEDR.lampBrightness == 1.2 && fixedEDR.lightStartedAt == fixedEDRStart,
-                      "switching to EDR locks 120 percent without restarting the lamp")
-            fixedEDR.backlightEDREnabled = false
-            try check(fixedEDR.lampBrightness == 0.72 && fixedEDR.lightStartedAt == fixedEDRStart,
+            adjustableEDR.backlightEDREnabled = true
+            try check(adjustableEDR.lampBrightness == 0.84 && adjustableEDR.lightStartedAt == adjustableEDRStart,
+                      "switching to EDR restores its previous brightness without restarting the lamp")
+            adjustableEDR.backlightEDREnabled = false
+            try check(adjustableEDR.lampBrightness == 0.72 && adjustableEDR.lightStartedAt == adjustableEDRStart,
                       "leaving EDR restores the previous ordinary brightness and lamp clock")
         }
-        fixedEDR.backlightEDREnabled = true
-        fixedEDR.isLit = false
-        fixedEDR.lampBrightness = TableModel.defaultLampBrightness
-        fixedEDR.isLit = true
-        try check(fixedEDR.lampBrightness == 1.2,
-                  "turning the lamp off and on cannot reset fixed EDR brightness")
+        adjustableEDR.backlightEDREnabled = true
+        adjustableEDR.isLit = false
+        adjustableEDR.lampBrightness = 0.9
+        adjustableEDR.isLit = true
+        try check(adjustableEDR.lampBrightness == 0.9,
+                  "turning the lamp off and on preserves the chosen EDR brightness")
         try check(TablePreviewSizing.maxPixel(size: CGSize(width: 110, height: 74), displayScale: 2) == 256,
                   "small Retina table photos request 256 pixels instead of 2200")
         try check(TablePreviewSizing.maxPixel(size: CGSize(width: 110, height: 170), displayScale: 2) == 384,
@@ -131,9 +143,12 @@ struct DropChecks {
             page.setPhoto(startupOffTablePhoto, in: pocket)
         }
         await startupWriter.importURLs([startupTrayPhoto])
+        startupWriter.backlightEDREnabled = true
         startupWriter.flushSave()
         let savedStartupBytes = try Data(contentsOf: startupStorage)
         let startup = TableModel(storageURL: startupStorage)
+        try check(!startup.backlightEDREnabled && startup.lampBrightness == TableModel.defaultLampBrightness,
+                  "relaunch resets EDR to off even when the previous session enabled it")
         try check(startup.isPreparingStartup && startup.startupTotal == 2 && startup.startupCompleted == 0,
                   "restart prepares unique photos from loose films and on-table albums only")
         let albumSurfaces = startup.onTableAlbums.flatMap { $0.pockets.map(\.id) }

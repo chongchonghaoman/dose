@@ -142,7 +142,7 @@ struct SlideshowChecks {
               "closing the shutter after departure does not cut off the recording")
         try await Task.sleep(for: .milliseconds(80))
         check(awaitingWindow.photo?.url == a && awaitingWindow.shutter == 0 && cueOrder == ["first", "out"] && stops == stopsAtRequest,
-              "the black interval hides the photo and spill while allowing the shutter recording to finish")
+              "the black interval hides the photo while allowing the shutter recording to finish")
         try await waitUntil { awaitingWindow.phase == .arriving }
         check(ProcessInfo.processInfo.systemUptime - began >= 0.20 && awaitingWindow.photo?.url == b &&
               departures == 1 && cueOrder == ["first", "out"] && stops == stopsAtRequest,
@@ -401,8 +401,9 @@ struct SlideshowChecks {
                   "quadrant at \(x),\(y) retains its source color and orientation")
         }
         for (x, y) in [(499, 299), (500, 299), (499, 300), (500, 300)] {
-            check(colorDifference(color(sharp, x, y), color(baseline, x, y)) < 0.01,
-                  "the centre remains sharp and color-preserving at \(x),\(y)")
+            let difference = colorDifference(color(sharp, x, y), color(baseline, x, y))
+            check(difference < 0.01,
+                  "steady projection preserves the sharp central seam at \(x),\(y)")
         }
         let leftAlpha = (0...8).map { color(sharp, $0, 300).alphaComponent }
         check(leftAlpha[0] < 0.01 && leftAlpha[1] > leftAlpha[0] && leftAlpha[2] > leftAlpha[1],
@@ -418,19 +419,51 @@ struct SlideshowChecks {
               color(soft, 500, 300).alphaComponent > 0.99,
               "the focus bitmap shares the same edge alpha without dimming the centre")
         check(colorDifference(color(soft, 499, 150), color(baseline, 499, 150)) > 0.03,
-              "the temporary focus bitmap softens an internal edge while the sharp bitmap does not")
+              "the temporary focus bitmap softens an internal edge during arrival")
         check(colorDifference(color(sharp, 50, 50), color(baseline, 50, 50)) > 0.015 &&
               color(sharp, 50, 50).redComponent < color(baseline, 50, 50).redComponent,
               "the lens gently dims outer corners while the central colour checks remain unchanged")
-        guard let glowImage = rendered.glow else { preconditionFailure("projection colour spill was not rendered") }
-        let glow = NSBitmapImageRep(cgImage: glowImage)
-        check(glowImage.width <= 610 && glowImage.height <= 610 && rendered.glowOutset >= 0.10,
-              "projection spill is cached at a bounded small resolution with outside padding")
-        check(color(glow, 0, glowImage.height / 2).alphaComponent < 0.01 &&
-              color(glow, glowImage.width / 2, 0).alphaComponent < 0.01,
-              "the cached colour spill dies away before its outer rectangle")
-        check(color(glow, 40, glowImage.height / 2).alphaComponent > 0.01,
-              "the cached spill carries light beyond the original left aperture edge")
+        check(rendered.preview.lit === rendered.sharp && rendered.defocusedPreview.lit === rendered.soft,
+              "EDR inputs reference the prepared sharp and temporary-focus pixels without extra raster copies")
+        check(rendered.preview.litCIImage.extent == CGRect(x: 0, y: 0, width: source.width, height: source.height),
+              "projection output ends at the original aperture without padded colour spill")
+        let projectionModel = TableModel(restore: false)
+        projectionModel.backlightEDREnabled = true
+        projectionModel.lampBrightness = 0.85
+        projectionModel.backlightEDREnabled = false
+        guard let projectedDisplay = SlideshowPhotoDisplay(photo: rendered, focus: 0.4,
+            brightness: projectionModel.edrBrightness).body as? OpticalDisplay else {
+            preconditionFailure("slideshow must use the shared optical display")
+        }
+        check(projectedDisplay.edrEnabled && projectedDisplay.brightness == 0.85 &&
+              projectedDisplay.preview === rendered.preview && projectedDisplay.defocusedPreview === rendered.defocusedPreview &&
+              projectedDisplay.focus == 0.4,
+              "the slideshow uses the chosen EDR brightness and animated focus even with the toolbar switch off")
+
+        for background: UInt8 in [0, 64] {
+            let dim = makeLightPatch(background: background)
+            guard let result = await renderer.render(dim, url: a) else { preconditionFailure("dim projection failed") }
+            let value = color(NSBitmapImageRep(cgImage: result.sharp), 256, 160)
+            let expected = color(NSBitmapImageRep(cgImage: dim), 256, 160)
+            check(colorDifference(value, expected) < 0.008 &&
+                  abs(value.greenComponent - value.redComponent) < 0.008 && value.alphaComponent > 0.99,
+                  "a uniform dim photo creates no light or colour veil of its own (\(background), source \(expected), result \(value))")
+        }
+        let lightPatch = makeLightPatch(background: 16, highlight: [255, 230, 180, 255])
+        guard let lightResult = await renderer.render(lightPatch, url: a) else { preconditionFailure("highlight projection failed") }
+        let lightPixels = NSBitmapImageRep(cgImage: lightResult.sharp)
+        let lightBaseline = NSBitmapImageRep(cgImage: lightPatch)
+        let nearLight = color(lightPixels, 216, 160)
+        let farLight = color(lightPixels, 100, 160)
+        check(colorDifference(nearLight, color(lightBaseline, 216, 160)) < 0.008,
+              "bright detail creates no steady halo in its immediate surroundings")
+        check(abs(nearLight.redComponent - nearLight.blueComponent) < 0.005,
+              "warm highlights add no colour haze to adjacent neutral shadows")
+        check(colorDifference(farLight, color(lightBaseline, 100, 160)) < 0.008,
+              "steady projection leaves distant deep shadows unchanged")
+        check(color(lightPixels, 256, 160).redComponent > 0.98 &&
+              color(lightPixels, 256, 160).alphaComponent > 0.99,
+              "the highlight centre remains bright and opaque")
 
         // Inspect the actual bundled recording without opening an audio output device.
         guard let shutterURL = SlideshowSoundResource.url() else {
@@ -458,8 +491,39 @@ struct SlideshowChecks {
         check(shutterBuffer.frameLength == 9_126 && channelSamples.allSatisfy { $0.isFinite && abs($0) <= 1 } &&
               channelSamples.contains { abs($0) > 0.05 },
               "the whole shutter recording decodes to non-silent bounded audio")
-        check(SlideshowSoundResource.playbackVolume == 0.20,
-              "first arrival and full shutter share the quieter playback volume")
+        check(SlideshowSoundResource.playbackVolume == 0.15,
+              "first arrival and slide change retain the reduced playback volume")
+        check(SlideshowSoundResource.changeName == "SlideChange" &&
+              SlideshowSoundResource.firstArrivalName == "ShutterArrivalRoom",
+              "production audio selects only the approved change and first-arrival cues")
+        // Retain the unused projector resource alongside the selected recording.
+        for (name, frames, digest) in [
+            ("SlideChange", 26_496, "80b628ceb9232aef7f98147a26fae13616c59961bf43aa5072dc7b39dce26f97"),
+            ("ProjectorStart", 144_000, "7ad39bf6f8b112bfa28861b9fd250e7343f7efd2b216a49a5eca602e5bd8c94a")
+        ] {
+            guard let url = SlideshowSoundResource.url(named: name) else { preconditionFailure("missing selected audio") }
+            let data = try Data(contentsOf: url)
+            check(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() == digest,
+                  "\(name) matches the selected draft source and approved interval")
+            let file = try AVAudioFile(forReading: url)
+            check(file.length == frames && file.fileFormat.sampleRate == 48_000 && file.fileFormat.channelCount == 2,
+                  "\(name) preserves the expected duration, sample rate and stereo channels")
+            let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
+            try file.read(into: buffer)
+            let samples = buffer.floatChannelData!
+            let values = (0..<2).flatMap { channel in
+                Array(UnsafeBufferPointer(start: samples[channel], count: Int(buffer.frameLength)))
+            }
+            check(values.allSatisfy { $0.isFinite && abs($0) <= 1 } && values.contains { abs($0) > 0.05 },
+                  "\(name) decodes as non-silent finite audio without opening an output device")
+            if let appPath = CommandLine.arguments.dropFirst().first {
+                guard let bundle = Bundle(path: appPath), let packaged = SlideshowSoundResource.url(named: name, in: bundle) else {
+                    preconditionFailure("selected audio is missing from standalone app")
+                }
+                check(try Data(contentsOf: packaged) == data && packaged.path.hasPrefix(bundle.bundlePath + "/"),
+                      "the standalone app resolves the exact \(name) inside its own bundle")
+            }
+        }
         for (name, dryFrames) in [("ShutterClickRoom", 9_126), ("ShutterArrivalRoom", 4_563)] {
             guard let roomURL = SlideshowSoundResource.url(named: name) else {
                 preconditionFailure("the processed shutter resource must be bundled")
@@ -519,6 +583,8 @@ struct SlideshowChecks {
         }
 
         let empty = TableModel(restore: false)
+        check(!empty.backlightEDREnabled && empty.lampBrightness == TableModel.defaultLampBrightness,
+              "a fresh app begins with EDR disabled")
         empty.enterSlideshow()
         empty.nextSlide(); empty.previousSlide()
         check(!empty.slideshowMode && empty.currentSlideURL == nil && empty.nextSlideURL == nil,
@@ -536,11 +602,16 @@ struct SlideshowChecks {
             model.selectedID = selected
             model.loupeEnabled = true
             model.isLit = initiallyLit
+            model.backlightEDREnabled = initiallyLit
+            let tableEDR = model.backlightEDREnabled
+            let tableBrightness = model.lampBrightness
             model.pan = CGPoint(x: 28, y: -14)
             model.zoom = 1.7
             let layout = model.layout
             let lightStarted = model.lightStartedAt
             model.enterSlideshow()
+            check(model.backlightEDREnabled == tableEDR && model.lampBrightness == tableBrightness,
+                  "automatic slideshow EDR does not overwrite the table viewing preference")
             check(model.slideshowMode && model.slideshowOrder.count == 3 && Set(model.slideshowOrder) == Set([a, b, c]),
                   "slideshow queues every library photo once in a randomized order")
             let first = model.currentSlideURL
@@ -555,6 +626,8 @@ struct SlideshowChecks {
                   model.lightStartedAt == lightStarted && model.loupeEnabled && model.pan == CGPoint(x: 28, y: -14) && model.zoom == 1.7,
                   "slideshow navigation preserves table layout, selection, lamp, lens and camera")
             model.exitSlideshow()
+            check(model.backlightEDREnabled == tableEDR && model.lampBrightness == tableBrightness,
+                  "returning from slideshow preserves the previous table EDR switch and brightness")
             check(!model.slideshowMode && model.currentSlideURL == nil && model.nextSlideURL == nil && model.slideshowOrder.isEmpty,
                   "exit clears only the transient slideshow queue")
             check(model.layout == layout && model.selectedID == selected && model.isLit == initiallyLit && model.loupeEnabled,
@@ -618,6 +691,25 @@ struct SlideshowChecks {
         for y in 0..<height {
             for x in 0..<width {
                 let value = colors[(y >= height / 2 ? 2 : 0) + (x >= width / 2 ? 1 : 0)]
+                let offset = (y * width + x) * 4
+                bytes.replaceSubrange(offset..<(offset + 4), with: value)
+            }
+        }
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue).union(.byteOrder32Big),
+                       provider: CGDataProvider(data: Data(bytes) as CFData)!, decode: nil,
+                       shouldInterpolate: false, intent: .defaultIntent)!
+    }
+
+    private static func makeLightPatch(background: UInt8, highlight: [UInt8]? = nil) -> CGImage {
+        let width = 512, height = 320
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let value = (220..<292).contains(x) && (124..<196).contains(y)
+                    ? (highlight ?? [background, background, background, 255])
+                    : [background, background, background, 255]
                 let offset = (y * width + x) * 4
                 bytes.replaceSubrange(offset..<(offset + 4), with: value)
             }

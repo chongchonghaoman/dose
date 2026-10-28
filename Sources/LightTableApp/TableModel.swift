@@ -78,14 +78,22 @@ final class TableModel {
     var viewport: TableViewport { TableViewport(scale: zoom, offsetX: pan.x, offsetY: pan.y) }
     private(set) var imageAspects: [URL: Double] = [:]
     private var ordinaryLampBrightness = TableModel.defaultLampBrightness
-    var backlightEDREnabled = true
-    // Every display path reads this value; switching EDR never overwrites the
-    // user's ordinary-mode setting or allows a stale slider event to change it.
+    private(set) var edrBrightness = TableModel.edrLampBrightness
+    var backlightEDREnabled = false
+    // Each mode retains its own setting for this session. The slideshow can
+    // use the EDR setting without changing the table's current mode.
+    var lampBrightnessDefault: Double {
+        backlightEDREnabled ? Self.edrLampBrightness : Self.defaultLampBrightness
+    }
     var lampBrightness: Double {
-        get { backlightEDREnabled ? Self.edrLampBrightness : ordinaryLampBrightness }
+        get { backlightEDREnabled ? edrBrightness : ordinaryLampBrightness }
         set {
-            guard !backlightEDREnabled else { return }
-            ordinaryLampBrightness = newValue
+            if backlightEDREnabled {
+                guard newValue.isFinite else { return }
+                edrBrightness = min(1.6, max(0.1, newValue))
+            } else {
+                ordinaryLampBrightness = newValue
+            }
         }
     }
     let transmissionEnabled = true

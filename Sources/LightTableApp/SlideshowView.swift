@@ -13,22 +13,7 @@ struct SlideshowView: View {
                 Color.black.ignoresSafeArea()
                 if let photo = playback.photo {
                     let size = photo.fittedSize(in: proxy.size)
-                    let spill = max(size.width, size.height) * photo.glowOutset
-                    ZStack {
-                        if let glow = photo.glow {
-                            Image(decorative: glow, scale: 1).resizable().interpolation(.high)
-                                .frame(width: size.width + spill * 2, height: size.height + spill * 2)
-                                .opacity(0.20)
-                        }
-                        Image(decorative: photo.soft, scale: 1).resizable().interpolation(.high)
-                            .frame(width: size.width, height: size.height)
-                            .opacity(1 - playback.focus)
-                        Image(decorative: photo.sharp, scale: 1).resizable().interpolation(.high)
-                            .frame(width: size.width, height: size.height)
-                            .opacity(playback.focus)
-                            .blendMode(.plusLighter)
-                    }
-                    .compositingGroup()
+                    SlideshowPhotoDisplay(photo: photo, focus: playback.focus, brightness: model.edrBrightness)
                     .frame(width: size.width, height: size.height)
                     .modifier(ProjectionTravel(progress: playback.transport, container: proxy.size, image: size))
                     .opacity(playback.shutter)
@@ -85,5 +70,23 @@ struct SlideshowView: View {
         return SlideshowPlayback(outgoingSound: { sound.outgoing() },
                                  firstArrivalSound: { sound.firstArrival() },
                                  prepareSound: { await sound.prepare() }, stopSound: { sound.stop() })
+    }
+}
+
+/// Animate focus inside the EDR surface instead of flattening two HDR views
+/// into a SwiftUI bitmap. Table EDR preferences remain independent.
+struct SlideshowPhotoDisplay: View, Animatable {
+    let photo: ProjectionPhoto
+    var focus: Double
+    let brightness: Double
+
+    var animatableData: Double {
+        get { focus }
+        set { focus = newValue }
+    }
+
+    var body: some View {
+        OpticalDisplay(preview: photo.preview, brightness: brightness,
+                       edrEnabled: true, defocusedPreview: photo.defocusedPreview, focus: focus)
     }
 }

@@ -19,7 +19,7 @@ soundResources="$binary/LightTable_LightTableApp.bundle"
 if [[ -d "$soundResources/Contents/Resources" ]]; then
     soundResources="$soundResources/Contents/Resources"
 fi
-for sound in ShutterClick ShutterClickRoom ShutterArrivalRoom; do
+for sound in ShutterClick ShutterClickRoom ShutterArrivalRoom SlideChange ProjectorStart; do
     cp "$soundResources/$sound.wav" "$app/Contents/Resources/$sound.wav"
 done
 ditto "$soundResources/ReturnToPast" "$app/Contents/Resources/ReturnToPast"

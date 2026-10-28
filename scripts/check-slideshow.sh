@@ -4,7 +4,7 @@ PACKAGE_ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 source "$PACKAGE_ROOT/scripts/edr-link-flags.sh"
 CHECKS_DIR="$PACKAGE_ROOT/.build/slideshow-checks"
 mkdir -p "$CHECKS_DIR"
-for sound in ShutterClick ShutterClickRoom ShutterArrivalRoom; do
+for sound in ShutterClick ShutterClickRoom ShutterArrivalRoom SlideChange ProjectorStart; do
   cp "$PACKAGE_ROOT/Sources/LightTableApp/Resources/$sound.wav" "$CHECKS_DIR/$sound.wav"
 done
 xcrun swiftc "${EDR_SWIFT_FLAGS[@]}" -swift-version 5 -parse-as-library -module-name LightTableCore -emit-module -emit-library \

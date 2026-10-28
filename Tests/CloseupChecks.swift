@@ -40,12 +40,13 @@ private actor RasterGate {
             precondition(condition, message); count += 1; print("PASS \(message)")
         }
         let brightnessModel = TableModel(restore: false)
+        brightnessModel.backlightEDREnabled = true
         let brightnessBinding = Binding(get: { brightnessModel.lampBrightness },
             set: { brightnessModel.lampBrightness = $0 })
         let brightnessCoordinator = BrightnessSlider.Coordinator(value: brightnessBinding)
         let brightnessSlider = ResettableBrightnessSlider()
         brightnessSlider.minValue = 0.1; brightnessSlider.maxValue = 1.6
-        brightnessSlider.defaultValue = TableModel.defaultLampBrightness
+        brightnessSlider.defaultValue = brightnessModel.lampBrightnessDefault
         brightnessSlider.doubleValue = brightnessModel.lampBrightness
         brightnessSlider.target = brightnessCoordinator
         brightnessSlider.action = #selector(BrightnessSlider.Coordinator.changed(_:))
@@ -59,13 +60,17 @@ private actor RasterGate {
         brightnessSlider.doubleValue = 0.4
         brightnessCoordinator.changed(brightnessSlider)
         check(brightnessSlider.doubleValue == 1.2 && brightnessModel.lampBrightness == 1.2,
-              "disabled slider callbacks retain fixed 120 percent EDR and restore the knob")
+              "disabled slider callbacks retain the current EDR setting and restore the knob")
         brightnessSlider.isEnabled = true
         brightnessSlider.doubleValue = 0.7
         brightnessCoordinator.changed(brightnessSlider)
+        check(brightnessSlider.doubleValue == 0.7 && brightnessModel.lampBrightness == 0.7,
+              "enabled EDR slider continuously updates brightness")
+        brightnessSlider.mouseDown(with: brightnessReset)
         check(brightnessSlider.doubleValue == 1.2 && brightnessModel.lampBrightness == 1.2,
-              "stale enabled-slider action cannot overwrite EDR brightness")
+              "EDR double-click restores its 120 percent default")
         brightnessModel.backlightEDREnabled = false
+        brightnessSlider.defaultValue = brightnessModel.lampBrightnessDefault
         brightnessSlider.doubleValue = 0.75
         brightnessCoordinator.changed(brightnessSlider)
         check(brightnessModel.lampBrightness == 0.75,

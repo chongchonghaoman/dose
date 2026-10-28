@@ -13,10 +13,13 @@ struct OpticalDisplay: NSViewRepresentable {
     var flare: Double = 0
     var brightness: Double = 1
     var edrEnabled = false
+    var defocusedPreview: PhotoPreview? = nil
+    var focus: Double = 1
     func makeNSView(context: Context) -> OpticalMetalView { OpticalMetalView() }
     func updateNSView(_ view: OpticalMetalView, context: Context) {
         view.set(preview: preview, image: image, transmission: transmission,
-                 flare: flare, brightness: brightness, loupe: loupe, edrEnabled: edrEnabled)
+                 flare: flare, brightness: brightness, loupe: loupe, edrEnabled: edrEnabled,
+                 defocusedPreview: defocusedPreview, focus: focus)
     }
 }
 
@@ -91,6 +94,8 @@ final class OpticalMetalView: MTKView {
     private var flare = 0.0
     private var brightness = 1.0
     private var edrEnabled = false
+    private var defocusedPreview: PhotoPreview?
+    private var focus = 1.0
     private let headroomProvider: (NSScreen?) -> Double
     private var currentEDRHeadroom = 1.0
 
@@ -233,7 +238,8 @@ final class OpticalMetalView: MTKView {
 
     func set(preview: PhotoPreview?, image: CGImage?, transmission: Double,
              flare: Double, brightness: Double, loupe: LoupeDisplayInput? = nil,
-             edrEnabled: Bool = false) {
+             edrEnabled: Bool = false, defocusedPreview: PhotoPreview? = nil, focus: Double = 1) {
+        let focus = focus.isFinite ? min(1, max(0, focus)) : 1
         let edrChanged = self.edrEnabled != edrEnabled
         if edrChanged {
             self.edrEnabled = edrEnabled
@@ -246,12 +252,14 @@ final class OpticalMetalView: MTKView {
         let sourceChanged = self.preview?.source !== preview?.source || self.preview?.lit !== preview?.lit ||
             self.preview?.dark !== preview?.dark || self.preview?.boosted !== preview?.boosted ||
             self.preview?.flare !== preview?.flare || self.preview?.transmitted != preview?.transmitted ||
-            self.image !== image || self.brightness != brightness || self.loupe != loupe
+            self.image !== image || self.brightness != brightness || self.loupe != loupe ||
+            self.defocusedPreview !== defocusedPreview || self.focus != focus
         let changed = sourceChanged || self.transmission != transmission || self.flare != flare || edrChanged
         if sourceChanged { invalidateCache() }
 
         self.preview = preview; self.image = image; self.transmission = transmission
         self.flare = flare; self.brightness = brightness; self.loupe = loupe
+        self.defocusedPreview = defocusedPreview; self.focus = focus
         let shouldAutoResize = loupe == nil
         if autoResizeDrawable != shouldAutoResize { autoResizeDrawable = shouldAutoResize }
         if let loupe, drawableSize != loupe.pixelSize {
@@ -395,7 +403,7 @@ final class OpticalMetalView: MTKView {
     func encode(into texture: MTLTexture, commandBuffer buffer: MTLCommandBuffer, renderer: CIContext) -> Bool {
         refreshEDRHeadroom()
         let headroom = currentEDRHeadroom
-        let isStable = flare == 0 && transmission == 1
+        let isStable = flare == 0 && transmission == 1 && (defocusedPreview == nil || focus == 1)
         let params = CacheParams(preview: preview, brightness: brightness,
                                  edrEnabled: edrEnabled, edrHeadroom: headroom)
         let canCache = isStable && loupe == nil && params != nil
@@ -470,8 +478,14 @@ final class OpticalMetalView: MTKView {
                 brightness: scene.brightness, viewport: loupe.viewport, refractionScale: loupe.refractionScale,
                 edrEnabled: scene.edrEnabled, edrHeadroom: edrHeadroom)
         } else if let preview {
-            return PhotoOptics.composite(preview: preview, transmission: transmission,
+            let sharp = PhotoOptics.composite(preview: preview, transmission: transmission,
                 flare: flare, brightness: brightness, edrEnabled: edrEnabled, edrHeadroom: edrHeadroom)
+            guard focus < 1, let defocusedPreview else { return sharp }
+            // Blend both prepared images in the same floating-point output,
+            // retaining EDR highlights throughout the short focus transition.
+            let soft = PhotoOptics.composite(preview: defocusedPreview, transmission: transmission,
+                flare: flare, brightness: brightness, edrEnabled: edrEnabled, edrHeadroom: edrHeadroom)
+            return PhotoOptics.mix(soft, sharp, focus)
         } else if let image {
             return CIImage(cgImage: image)
         }

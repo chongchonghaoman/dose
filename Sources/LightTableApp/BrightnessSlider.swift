@@ -32,7 +32,7 @@ struct BrightnessSlider: NSViewRepresentable {
         slider.isEnabled = isEnabled
         if slider.doubleValue != value { slider.doubleValue = value }
         let percentage = "\(Int(value * 100))%"
-        slider.toolTip = isEnabled ? "拖动调整亮度；双击滑杆恢复 100%" : "亮度固定为 \(percentage)，不可调节"
+        slider.toolTip = isEnabled ? "拖动调整亮度；双击滑杆恢复 \(Int(defaultValue * 100))%" : "亮度固定为 \(percentage)，不可调节"
         slider.setAccessibilityValueDescription(isEnabled ? percentage : "\(percentage)，不可调节")
     }
 
@@ -42,8 +42,7 @@ struct BrightnessSlider: NSViewRepresentable {
 
         @objc func changed(_ slider: NSSlider) {
             if slider.isEnabled { value.wrappedValue = slider.doubleValue }
-            // Restore the binding's accepted value, including a mode change
-            // that locks brightness before this queued action is delivered.
+            // Keep the knob synchronized with the value accepted by the model.
             slider.doubleValue = value.wrappedValue
             let percentage = "\(Int(slider.doubleValue * 100))%"
             slider.setAccessibilityValueDescription(slider.isEnabled ? percentage : "\(percentage)，不可调节")

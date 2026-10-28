@@ -1,9 +1,11 @@
 import AVFoundation
 import Foundation
 
-/// The selected shutter recording is bundled with the app, never read from an editor cache.
+/// Selected recordings are bundled with the app, never read from an editor cache.
 enum SlideshowSoundResource {
-    static let playbackVolume: Float = 0.20
+    static let playbackVolume: Float = 0.15
+    static let changeName = "SlideChange"
+    static let firstArrivalName = "ShutterArrivalRoom"
 
     static func url(named name: String = "ShutterClick", in bundle: Bundle = .main) -> URL? {
         if let url = bundle.url(forResource: name, withExtension: "wav") {
@@ -39,7 +41,8 @@ final class SlideshowMechanicalSound {
             guard let url = SlideshowSoundResource.url(named: name) else { return nil }
             return try? Data(contentsOf: url)
         }
-        return AudioData(outgoing: load("ShutterClickRoom"), firstArrival: load("ShutterArrivalRoom"))
+        return AudioData(outgoing: load(SlideshowSoundResource.changeName),
+                         firstArrival: load(SlideshowSoundResource.firstArrivalName))
     }
     private var preparation: Task<Void, Never>?
     private var outgoingPlayer: AVAudioPlayer?
@@ -58,7 +61,8 @@ final class SlideshowMechanicalSound {
                     guard player.prepareToPlay() else { return nil }
                     return player
                 }
-                return PreparedAudio(outgoing: makePlayer(bytes.outgoing), firstArrival: makePlayer(bytes.firstArrival))
+                return PreparedAudio(outgoing: makePlayer(bytes.outgoing),
+                                     firstArrival: makePlayer(bytes.firstArrival))
             }.value
             guard !Task.isCancelled, let self else { return }
             self.outgoingPlayer = prepared.outgoing
@@ -83,6 +87,7 @@ final class SlideshowMechanicalSound {
         for player in [outgoingPlayer, firstArrivalPlayer].compactMap({ $0 }) {
             player.pause()
             player.currentTime = 0
+            player.setVolume(SlideshowSoundResource.playbackVolume, fadeDuration: 0)
         }
     }
 

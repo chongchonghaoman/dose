@@ -6,7 +6,7 @@
 
 A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
 
-v0.1.103 带来全新「背光 EDR」：亮部更通透，高光保留层次，暗部保持深度，留住细节、色彩与对比度。完整内容及操作见 [更新说明](docs/releases/v0.1.103.md)。
+v0.1.107 开放 EDR 亮度调节，并优化幻灯片音效；延续「背光 EDR」的透光感、明暗层次与照片细节。完整内容及操作见 [更新说明](docs/releases/v0.1.107.md)。
 
 ## 下载与运行
 
@@ -16,9 +16,9 @@ v0.1.103 带来全新「背光 EDR」：亮部更通透，高光保留层次，�
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-当前版本 **[v0.1.103](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.103)**：全新背光 EDR，保留明暗层次与照片细节，支持快捷切换和亮度滑块收展。
+当前版本 **[v0.1.107](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.107)**：EDR 亮度自由调节，幻灯片自动采用 EDR，并优化加载、首张与换片音效。
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.103/LightTable-v0.1.103-macOS-arm64.zip)**
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.107/LightTable-v0.1.107-macOS-arm64.zip)**
 
 从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
 
@@ -34,7 +34,7 @@ v0.1.103 带来全新「背光 EDR」：亮部更通透，高光保留层次，�
 
 ## 本版更新说明
 
-首次打开v0.1.103时显示说明卡，以「背光 EDR」的透光感、层次与细节为主，介绍快捷切换和亮度控制。点击「开始观片」继续。本次说明仅自动展示一次，菜单「帮助 → 本次更新…」可以重看。旧版操作指南保留在文档中。
+首次打开v0.1.107时显示说明卡，以「背光 EDR」的透光感、层次与细节为主，介绍快捷切换和亮度控制，并补充「优化幻灯片音效」。点击「开始观片」继续。本次说明仅自动展示一次，菜单「帮助 → 本次更新…」可以重看。旧版操作指南保留在文档中。
 
 ## 功能
 
@@ -43,14 +43,14 @@ v0.1.103 带来全新「背光 EDR」：亮部更通透，高光保留层次，�
 - 点选底栏照片或文件名后按 Delete，删除单张；右键底栏标签 →「删除底栏」移除整栏。两者均移除台面对应散片，其他底栏、独立相册和磁盘原图保留。
 - 「一键平铺」将当前底栏的照片重新摆放到台面；**会清空当前散片布局并重新排列**。
 - 开关灯与亮度调整，带短暂过曝回落效果。
-- 背光 EDR：亮度固定为120%，开启时亮度滑块平滑收起；回到普通模式后展开并恢复之前的亮度。
+- 背光 EDR：启动默认关闭，点击顶部按钮或按 E 开启；默认亮度120%，可用滑块在10%–160%之间调整。双击恢复当前模式默认值，普通模式与EDR分别保留本次运行的亮度。
 - 普通放大镜1.5×；按住空格凑近，可选随窗口适配的原倍率或固定8×，松开退回。
 - 胶片袋式相册页与整页摆放。
-- 全屏幻灯：黑色背景、居中单张照片、随机播放顺序和机械换片动画；幻灯模式不显示放大镜。
+- 全屏幻灯：黑色背景、居中单张照片、随机播放顺序和机械换片动画；自动启用EDR并使用设定的EDR亮度，返回保留台面原状态。幻灯模式不显示放大镜。
 - 「回到过去」：从底栏拖入原始照片，本机生成高斯场景，黑场逐粒显现；左键旋转、右键平移、滚轮／捏合缩放，双击复位。
 - 首次使用「回到过去」联网下载环境与模型，之后复用；无16 GB硬门槛，8 GB设备尚未实测。SHARP模型仅限非商业科学研究，禁止产品开发或商业产品／服务用途，详见第三方许可说明。
 - 布局和预览缓存保存在本机；不修改照片原文件。
-- 首张入场与后续换片的快门声，带较轻音量和房间反射。
+- 幻灯片加载保持静音，首张入场保留原有声音，后续换片采用较轻的机械按键声，播放音量为15%。
 
 ## 使用
 
@@ -108,12 +108,10 @@ zsh scripts/build-app.sh "dist/custom/观片台.app"
 ```sh
 bash scripts/check.sh
 bash scripts/check-drops.sh
-bash scripts/check-light.sh
 bash scripts/check-loupe.sh
 bash scripts/check-sleeves.sh
 bash scripts/check-closeup.sh
 bash scripts/check-albums.sh
-bash scripts/check-optics.sh
 bash scripts/check-slideshow.sh
 bash scripts/check-updates.sh
 bash scripts/check-feature-guide.sh

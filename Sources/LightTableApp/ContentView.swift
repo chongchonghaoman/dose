@@ -302,23 +302,15 @@ struct ContentView: View {
                 HStack(spacing: 7) {
                     Image(systemName: "sun.max").font(.system(size: 12))
                     BrightnessSlider(value: $model.lampBrightness, range: 0.1...1.6,
-                                     defaultValue: TableModel.defaultLampBrightness)
+                                     defaultValue: model.lampBrightnessDefault)
                         .frame(width: 110, height: 22)
                     Text("\(Int(model.lampBrightness * 100))%")
                         .font(.system(size: 10, design: .monospaced)).monospacedDigit().frame(width: 34)
                 }
                 .padding(.horizontal, 12).frame(width: 196, height: 38)
                 .background(TableStyle.chrome, in: Capsule())
-                // Keep the native slider at full size while its outer viewport
-                // retracts toward EDR. Retaining it avoids an insertion flash.
-                .frame(width: model.backlightEDREnabled ? 0 : 196, alignment: .leading)
-                .clipped()
-                .opacity(model.backlightEDREnabled ? 0 : 1)
-                .padding(.leading, model.backlightEDREnabled ? 0 : 9)
-                .disabled(model.backlightEDREnabled)
-                .allowsHitTesting(!model.backlightEDREnabled)
-                .accessibilityHidden(model.backlightEDREnabled)
-                .help("连续调整灯板和胶片的透光亮度；双击滑杆恢复 100%；关灯时可预设")
+                .padding(.leading, 9)
+                .help("连续调整灯板和胶片的透光亮度；双击滑杆恢复 \(Int(model.lampBrightnessDefault * 100))%；关灯时可预设")
             }
             Button {
                 model.isLit.toggle()
@@ -351,7 +343,6 @@ struct ContentView: View {
             .help("进入回到过去，拖入原始照片生成三维场景")
             .disabled(entryPreparationID != nil)
         }.foregroundStyle(TableStyle.ink)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: model.backlightEDREnabled)
     }
 
     private func tool(_ symbol: String, _ help: String, active: Bool = false, action: @escaping () -> Void) -> some View {
