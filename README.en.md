@@ -1,12 +1,13 @@
 # dose
 
-dose is a local Windows app for selecting photos, trying film looks and arranging a set for sharing. Its built-in SpektraLab editor saves developed images back to the same library.
+dose is a local Windows photo app with automatic magazine layouts. It arranges portrait and landscape photos at different sizes while keeping their full aspect ratios. Try another composition with one click, or develop a photo in the built-in SpektraLab editor and return it to the same workspace.
 
 [Download for Windows](https://github.com/chongchonghaoman/dose/releases/latest) · [中文](README.md) · [Build](docs/BUILD.md)
 
 ![dose photo workspace](docs/media/hero.png)
 
-- **Light table.** Arrange photos freely or use grids, sleeves and editorial layouts. Search, filter and sort the library.
+- **Magazine layouts.** Generate pages with varied image sizes, whitespace and page numbers. Change the composition or reflow an individual page; use the nine-page mode for a larger set.
+- **Light table.** Arrange photos freely or use grids and sleeves. Search, filter and sort the library.
 - **Single-photo view.** Zoom, pan, step through the current selection and hold Space to compare the original. Return without losing the table layout.
 - **Film looks.** Browse LUT previews rendered from the current photo, save favorites and import `.cube` / HaldCLUT files.
 - **Built-in darkroom.** Enter the SpektraLab Windows editor from dose and return the result as a separate 16-bit ProPhoto RGB TIFF, retaining the original and editing recipe.
