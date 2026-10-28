@@ -94,7 +94,9 @@ struct ContentView: View {
         }
         .onPreferenceChange(SlideshowTraySnapshotKey.self) { slideshowTray = $0 }
         .onPreferenceChange(LoupeSceneKey.self) { scene in
-            DiagnosticsSampling.shared.record(scene == nil ? .loupeSceneUnavailable : .loupeSceneAvailable)
+            if loupe.sceneEdge.changed(to: scene != nil) {
+                DiagnosticsSampling.shared.record(scene == nil ? .loupeSceneUnavailable : .loupeSceneAvailable)
+            }
             loupe.scene = scene
             if scene == nil { loupe.cancel() }
         }
@@ -136,7 +138,7 @@ struct ContentView: View {
             LoupeKeyboard(enabled: tableKeyboardEnabled,
                           pressed: { let result = loupe.press(); DiagnosticsSampling.shared.record(.loupePressed); return result },
                           released: { loupe.release(reduceMotion: reduceMotion); DiagnosticsSampling.shared.record(.loupeReleased) },
-                          cancelled: { loupe.cancel(); DiagnosticsSampling.shared.record(.loupeCancelled) },
+                          cancelled: { if loupe.cancel() { DiagnosticsSampling.shared.record(.loupeCancelled) } },
                           cycleMagnification: { loupe.cycleMagnification() },
                           loupeEnabled: model.loupeEnabled,
                           toggleEDR: { model.backlightEDREnabled.toggle() },

@@ -70,6 +70,18 @@ test('accepts FC 3.0 HTTP trigger events delivered as a JSON Buffer', async () =
   assert.match(saved, new RegExp(`^diagnostics/\\d{4}/\\d{2}/\\d{2}/${sessionID}\\.json$`));
 });
 
+test('accepts schema 1 and 2 reports with frame unit events and rejects unknown schemas', () => {
+  const v2 = report();
+  v2.schemaVersion = 2;
+  v2.events.push({ elapsedMilliseconds: 20, name: 'frame_submit_summary', value1: 60, value2: 120, value3: 0 });
+  v2.events.push({ elapsedMilliseconds: 30, name: 'frame_complete_summary', value1: 60, value2: 120, value3: 1800 });
+  assert.equal(validateReport(v2), null);
+  assert.equal(validateReport(report()), null);
+  const v3 = report();
+  v3.schemaVersion = 3;
+  assert.equal(validateReport(v3), 'Unsupported schema version');
+});
+
 test('rejects unapproved event names and arbitrary string values', () => {
   const invalidName = report();
   invalidName.events[0].name = 'pointer_at_100_200';

@@ -14,9 +14,11 @@ final class DiagnosticsSampling: NSObject, ObservableObject {
     private var report: DiagnosticReport?
     private var startedAt: TimeInterval?
     private var timer: Timer?
-    private var submittedFrameCount = 0
-    private var completedFrameCount = 0
-    private var frameDurationMicroseconds: Int64 = 0
+    private var submittedBuffers = 0
+    private var submittedSurfaces = 0
+    private var completedBuffers = 0
+    private var completedSurfaces = 0
+    private var bufferDurationMicroseconds: Int64 = 0
 
     private override init() {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -62,15 +64,19 @@ final class DiagnosticsSampling: NSObject, ObservableObject {
         append(name, value1: value1, value2: value2, value3: value3)
     }
 
-    func recordFrame(durationNanoseconds: UInt64) {
+    /// One committed command buffer carrying `surfaces` drawables.
+    func recordSubmitted(surfaces: Int) {
         guard isRecording else { return }
-        completedFrameCount += 1
-        frameDurationMicroseconds += Int64(min(durationNanoseconds / 1_000, UInt64(Int64.max)))
+        submittedBuffers += 1
+        submittedSurfaces += surfaces
     }
 
-    func recordFrameSubmitted(count: Int) {
+    /// One completed command buffer; its duration is counted once, not once per surface.
+    func recordCompleted(surfaces: Int, durationNanoseconds: UInt64) {
         guard isRecording else { return }
-        submittedFrameCount += count
+        completedBuffers += 1
+        completedSurfaces += surfaces
+        bufferDurationMicroseconds += Int64(min(durationNanoseconds / 1_000, UInt64(Int64.max)))
     }
 
     func stopAndPrompt() {
@@ -107,13 +113,16 @@ final class DiagnosticsSampling: NSObject, ObservableObject {
     }
 
     private func flushFrameSummary() {
-        if submittedFrameCount > 0 || completedFrameCount > 0 {
-            append(.frameSummary, value1: Int64(submittedFrameCount), value2: Int64(completedFrameCount),
-                   value3: completedFrameCount == 0 ? 0 : frameDurationMicroseconds / Int64(completedFrameCount))
+        if submittedBuffers > 0 {
+            append(.frameSubmitSummary, value1: Int64(submittedBuffers), value2: Int64(submittedSurfaces))
         }
-        submittedFrameCount = 0
-        completedFrameCount = 0
-        frameDurationMicroseconds = 0
+        if completedBuffers > 0 {
+            append(.frameCompleteSummary, value1: Int64(completedBuffers), value2: Int64(completedSurfaces),
+                   value3: bufferDurationMicroseconds / Int64(completedBuffers))
+        }
+        submittedBuffers = 0; submittedSurfaces = 0
+        completedBuffers = 0; completedSurfaces = 0
+        bufferDurationMicroseconds = 0
     }
 
     private func persist() {

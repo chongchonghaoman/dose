@@ -7,6 +7,7 @@ const EVENT_NAMES = new Set([
   'loupe_enabled', 'loupe_disabled', 'loupe_scene_available', 'loupe_scene_unavailable',
   'pointer_tracking_available', 'pointer_tracking_unavailable', 'loupe_pressed',
   'loupe_released', 'loupe_cancelled', 'edr_enabled', 'edr_disabled', 'frame_summary',
+  'frame_submit_summary', 'frame_complete_summary',
 ]);
 const REPORT_KEYS = [
   'schemaVersion', 'sessionID', 'appVersion', 'buildVersion', 'macOSMajor',
@@ -26,7 +27,7 @@ function isIntegerInRange(value, min, max) {
 
 export function validateReport(report) {
   if (!exactKeys(report, REPORT_KEYS)) return 'Unexpected report fields';
-  if (report.schemaVersion !== 1) return 'Unsupported schema version';
+  if (![1, 2].includes(report.schemaVersion)) return 'Unsupported schema version';
   if (typeof report.sessionID !== 'string' || !UUID_PATTERN.test(report.sessionID)) return 'Invalid session ID';
   if (typeof report.appVersion !== 'string' || report.appVersion.length > 32 || !/^[A-Za-z0-9.+-]+$/.test(report.appVersion)) return 'Invalid app version';
   if (typeof report.buildVersion !== 'string' || report.buildVersion.length > 32 || !/^[A-Za-z0-9.+-]+$/.test(report.buildVersion)) return 'Invalid build version';

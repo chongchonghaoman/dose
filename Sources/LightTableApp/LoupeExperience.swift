@@ -102,6 +102,7 @@ struct LoupeSceneKey: PreferenceKey {
     var scene: LoupeSceneInput? {
         didSet { updateCursorVisibility() }
     }
+    @ObservationIgnored var sceneEdge = DiagnosticEdgeTracker(initial: false)
     @ObservationIgnored var cursorEnabled = false {
         didSet { if cursorEnabled != oldValue { updateCursorVisibility() } }
     }
@@ -141,11 +142,16 @@ struct LoupeSceneKey: PreferenceKey {
         }
     }
 
-    func cancel() {
+    /// Clears all transient state. Returns true only if a press or return animation was
+    /// actually interrupted, so repeated resets stay idempotent for diagnostics.
+    @discardableResult
+    func cancel() -> Bool {
+        let wasActive = isClose || anchor != nil
         returnTask?.cancel()
         isClose = false
         anchor = nil
         setCursorHidden(false)
+        return wasActive
     }
 
     private func finishReturn() {

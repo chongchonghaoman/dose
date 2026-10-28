@@ -45,4 +45,43 @@ final class DiagnosticReportTests: XCTestCase {
             macOSMajor: 15, macOSMinor: 1, macOSPatch: 0, architecture: "arm64")
         XCTAssertThrowsError(try value.encoded(maxBytes: 100))
     }
+
+    func testEventCountIsCappedAtServerLimitAndMarkedTruncated() throws {
+        var value = report()
+        for index in 0..<(DiagnosticReport.maximumEvents + 5) {
+            XCTAssertTrue(value.append(.init(elapsedMilliseconds: UInt64(index), name: .loupeCancelled)))
+        }
+        XCTAssertEqual(value.events.count, DiagnosticReport.maximumEvents)
+        XCTAssertTrue(value.truncated)
+        XCTAssertEqual(value.events.first?.elapsedMilliseconds, 5)
+        XCTAssertLessThanOrEqual(try value.encoded().count, DiagnosticReport.maximumEncodedBytes)
+    }
+
+    func testBoundaryReportWithMaximumEventsEncodesWithinByteLimit() throws {
+        var value = report()
+        for index in 0..<DiagnosticReport.maximumEvents {
+            value.append(.init(elapsedMilliseconds: UInt64(index), name: .frameSummary,
+                value1: 999_999_999, value2: -999_999_999, value3: 999_999_999))
+        }
+        XCTAssertFalse(value.truncated)
+        XCTAssertLessThanOrEqual(try value.encoded().count, DiagnosticReport.maximumEncodedBytes)
+    }
+
+    func testNewReportsUseSchemaTwoWithSeparatedFrameUnits() throws {
+        var value = report()
+        XCTAssertEqual(value.schemaVersion, 2)
+        XCTAssertTrue(value.append(.init(elapsedMilliseconds: 1, name: .frameSubmitSummary, value1: 60, value2: 120)))
+        XCTAssertTrue(value.append(.init(elapsedMilliseconds: 2, name: .frameCompleteSummary, value1: 60, value2: 120, value3: 1800)))
+        let json = String(data: try value.encoded(), encoding: .utf8) ?? ""
+        XCTAssertTrue(json.contains("frame_submit_summary") && json.contains("frame_complete_summary"))
+    }
+
+    func testEdgeTrackerIgnoresRepeatedStates() {
+        var tracker = DiagnosticEdgeTracker(initial: false)
+        XCTAssertFalse(tracker.changed(to: false))
+        XCTAssertTrue(tracker.changed(to: true))
+        for _ in 0..<100 { XCTAssertFalse(tracker.changed(to: true)) }
+        XCTAssertTrue(tracker.changed(to: false))
+        XCTAssertFalse(tracker.changed(to: false))
+    }
 }

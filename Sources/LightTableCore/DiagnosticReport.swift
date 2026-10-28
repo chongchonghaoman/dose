@@ -16,7 +16,13 @@ public enum DiagnosticEventName: String, Codable, CaseIterable, Sendable {
     case loupeCancelled = "loupe_cancelled"
     case edrEnabled = "edr_enabled"
     case edrDisabled = "edr_disabled"
+    /// Schema 1 only: value1/value2 counted drawable surfaces, value3 repeated one buffer duration per surface.
     case frameSummary = "frame_summary"
+    /// Schema 2, per second. value1 = command buffers committed, value2 = drawable surfaces encoded in them.
+    case frameSubmitSummary = "frame_submit_summary"
+    /// Schema 2, per second. value1 = command buffers completed, value2 = drawable surfaces in them,
+    /// value3 = mean commit-to-completion microseconds per command buffer.
+    case frameCompleteSummary = "frame_complete_summary"
 }
 
 public struct DiagnosticEvent: Codable, Equatable, Sendable {
@@ -39,6 +45,8 @@ public struct DiagnosticEvent: Codable, Equatable, Sendable {
 public struct DiagnosticReport: Codable, Equatable, Sendable {
     public static let maximumDurationMilliseconds: UInt64 = 15 * 60 * 1_000
     public static let maximumEncodedBytes = 5 * 1_024 * 1_024
+    public static let maximumEvents = 20_000
+    static let maximumEventEncodedBytes = 170
 
     public let schemaVersion: Int
     public let sessionID: String
@@ -53,7 +61,7 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
 
     public init(sessionID: String, appVersion: String, buildVersion: String,
                 macOSMajor: Int, macOSMinor: Int, macOSPatch: Int, architecture: String) {
-        schemaVersion = 1
+        schemaVersion = 2
         self.sessionID = sessionID
         self.appVersion = appVersion
         self.buildVersion = buildVersion
@@ -73,11 +81,23 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
               maxBytes > 0 else { return false }
 
         events.append(event)
+        if events.count > Self.maximumEvents {
+            events.removeFirst(events.count - Self.maximumEvents)
+            truncated = true
+        }
+        // A worst-case bound lets the common path skip re-encoding the whole report per event.
+        if metadataBytes() + events.count * Self.maximumEventEncodedBytes <= maxBytes { return true }
         while (try? encoded(maxBytes: maxBytes)) == nil, !events.isEmpty {
             events.removeFirst()
             truncated = true
         }
         return (try? encoded(maxBytes: maxBytes)) != nil
+    }
+
+    private func metadataBytes() -> Int {
+        var empty = self
+        empty.events = []
+        return (try? JSONEncoder().encode(empty).count) ?? Int.max / 2
     }
 
     public func encoded(maxBytes: Int = DiagnosticReport.maximumEncodedBytes) throws -> Data {
@@ -86,6 +106,18 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
         let data = try encoder.encode(self)
         guard data.count <= maxBytes else { throw DiagnosticReportError.exceedsByteLimit }
         return data
+    }
+}
+
+/// Records a state only when it differs from the previous one, so per-frame
+/// updates that keep the same state never become diagnostic events.
+public struct DiagnosticEdgeTracker: Sendable {
+    private var last: Bool
+    public init(initial: Bool = false) { last = initial }
+    public mutating func changed(to state: Bool) -> Bool {
+        guard state != last else { return false }
+        last = state
+        return true
     }
 }
 

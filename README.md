@@ -6,7 +6,7 @@
 
 A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
 
-v0.1.114 新增诊断采样：遇到问题时录一份诊断记录上传，并把诊断编号发给维护者。见[更新说明](docs/releases/v0.1.114.md)与[操作指引](docs/本次更新操作指引-v0.1.114.md)，可通过应用内「检查更新…」获取。
+v0.1.115 改进诊断采样的帧统计和重复事件处理，操作步骤沿用 [v0.1.114 指引](docs/本次更新操作指引-v0.1.114.md)。可通过应用内「检查更新…」获取。
 
 ## 下载与运行
 
@@ -16,9 +16,9 @@ v0.1.114 新增诊断采样：遇到问题时录一份诊断记录上传，并�
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-当前版本 **[v0.1.114](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.114)**：新增诊断采样与首次启动操作指引。
+当前版本 **[v0.1.115](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.115)**：诊断采样帧统计与重复事件处理优化。
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.114/LightTable-v0.1.114-macOS-arm64.zip)**
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.115/LightTable-v0.1.115-macOS-arm64.zip)**
 
 从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
 
@@ -34,7 +34,7 @@ v0.1.114 新增诊断采样：遇到问题时录一份诊断记录上传，并�
 
 ## 本版更新说明
 
-首次打开v0.1.114时显示诊断采样的三步操作指引，需走完才进入观片；中途退出下次启动会再次出现。走完后可在菜单「帮助 → 本次更新…」重看。详见[操作指引](docs/本次更新操作指引-v0.1.114.md)，旧版操作指南保留在文档中。
+首次打开v0.1.115时继续显示诊断采样的三步操作指引，需走完才进入观片；中途退出下次启动会再次出现。走完后可在菜单「帮助 → 本次更新…」重看。操作步骤见[指引](docs/本次更新操作指引-v0.1.114.md)，其他旧版操作指南保留在文档中。
 
 ## 诊断采样
 

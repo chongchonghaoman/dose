@@ -347,13 +347,13 @@ final class OpticalMetalView: MTKView {
             }
         }
         guard !drawables.isEmpty else { return }
-        DiagnosticsSampling.shared.recordFrameSubmitted(count: encoded.count)
+        DiagnosticsSampling.shared.recordSubmitted(surfaces: encoded.count)
         let commandStart = DispatchTime.now().uptimeNanoseconds
         buffer.addCompletedHandler { completed in
             let succeeded = completed.status == .completed
             let duration = DispatchTime.now().uptimeNanoseconds &- commandStart
             DispatchQueue.main.async {
-                for _ in encoded { DiagnosticsSampling.shared.recordFrame(durationNanoseconds: duration) }
+                DiagnosticsSampling.shared.recordCompleted(surfaces: encoded.count, durationNanoseconds: duration)
                 for surface in encoded {
                     guard let view = surface.view else { continue }
                     if surface.edrLoupe {
