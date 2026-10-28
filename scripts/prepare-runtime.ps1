@@ -3,16 +3,37 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $version = '0.28.0'
 $expected = 'b6c0b8fa96d28b42bf523e4a662607034233dd86c3f0c3034590de31ea47fcf6'
+function Get-Sha256([string]$File) {
+  $stream = [IO.File]::OpenRead($File)
+  $hasher = [Security.Cryptography.SHA256]::Create()
+  try { return ([BitConverter]::ToString($hasher.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
+  finally { $hasher.Dispose(); $stream.Dispose() }
+}
 $cache = Join-Path $repoRoot '.cache'
 New-Item -ItemType Directory -Force -Path $cache | Out-Null
 if (-not $ReleaseZip) {
   $ReleaseZip = Join-Path $cache "dose-$version-Windows-x64.zip"
-  if (-not (Test-Path -LiteralPath $ReleaseZip)) {
-    Invoke-WebRequest -Uri "https://github.com/chongchonghaoman/dose/releases/download/v$version/dose-$version-Windows-x64.zip" -OutFile $ReleaseZip -UseBasicParsing
+  if (-not (Test-Path -LiteralPath $ReleaseZip) -or (Get-Sha256 $ReleaseZip) -ne $expected) {
+    $download = "$ReleaseZip.$PID.download"
+    $url = "https://github.com/chongchonghaoman/dose/releases/download/v$version/dose-$version-Windows-x64.zip"
+    Write-Host "Downloading dose $version native runtime..."
+    try {
+      if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+        & curl.exe --fail --location --silent --show-error --retry 2 --connect-timeout 20 --max-time 600 --output $download $url
+        if ($LASTEXITCODE -ne 0) { throw "Download failed: curl exit $LASTEXITCODE" }
+      } else {
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $url -OutFile $download -UseBasicParsing -TimeoutSec 600
+      }
+      if ((Get-Sha256 $download) -ne $expected) { throw 'Downloaded release checksum mismatch' }
+      Move-Item -LiteralPath $download -Destination $ReleaseZip -Force
+    } finally {
+      if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Force }
+    }
   }
 }
 $ReleaseZip = (Resolve-Path -LiteralPath $ReleaseZip).Path
-if ((Get-FileHash -LiteralPath $ReleaseZip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Release checksum mismatch. No runtime files were copied.' }
+if ((Get-Sha256 $ReleaseZip) -ne $expected) { throw 'Release checksum mismatch. No runtime files were copied.' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [System.IO.Compression.ZipFile]::OpenRead($ReleaseZip)
 try {
