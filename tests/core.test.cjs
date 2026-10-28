@@ -16,7 +16,8 @@ test('empty and corrupt state normalize without throwing',()=>{
 test('magazine pages preserve print geometry and reject invalid or repeated membership',()=>{
   const photo={id:'p',path:path.resolve('photo.jpg'),width:4000,height:3000};
   const s=cleanState({photos:[photo],items:[{id:'a',photoId:'p',presentation:'print',width:45},{id:'b',photoId:'p'}],editorialPages:[{x:NaN,width:Infinity,height:1400,itemIds:['a','missing','a']},{itemIds:['a','b']},null,{itemIds:['missing']}]});
-  assert.equal(s.items[0].width,45);assert.equal(s.items[0].presentation,'print');assert.equal(s.items[1].presentation,'film');assert.equal(s.editorialPages[0].x,0);assert.equal(s.editorialPages[0].width,1000);assert.deepEqual(s.editorialPages.map(p=>p.itemIds),[['a'],['b']]);
+  assert.equal(s.items[0].width,45);assert.equal(s.items[0].presentation,'print');assert.equal(s.items[1].presentation,'print');assert.equal(s.editorialPages[0].x,0);assert.equal(s.editorialPages[0].width,1000);assert.deepEqual(s.editorialPages.map(p=>p.itemIds),[['a'],['b']]);
+  assert.equal(cleanState({photos:[photo],items:[{id:'c',photoId:'p',mount:'slide'}]}).items[0].presentation,'film');
   assert.deepEqual(cleanState(s),s);
 });
 test('adaptive variants and dense viewport widths survive save/load without clamping to film thumbnails',()=>{

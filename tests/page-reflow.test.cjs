@@ -26,7 +26,7 @@ test('Local reflow keeps paper and membership, responds to aspects and changes t
 });
 
 test('Reflow uses stable page membership order and continues exploring after a full round',()=>{
-  const photos=input(8),first=layoutPhotos(photos,{style:'editorial'}).pages[0];let page=first;const generations=[];
+ const photos=input(8),first=layoutPhotos(photos,{style:'editorial'}).pages.find(p=>p.itemIds.length>1);let page=first;const generations=[];
   for(let n=0;n<14;n++){
     const local=reflowPage(photos,page);assert.deepEqual(local,reflowPage(photos.slice().reverse(),page));
     assert.notEqual(local.page.composition,page.composition);generations.push(JSON.stringify(local.items));page=local.page;

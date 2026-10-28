@@ -11,7 +11,8 @@
     return (Array.isArray(items) ? items : []).map((item, index) => ({
       id: item && item.id !== undefined ? item.id : index,
       aspect: finite(item && item.aspect, 1),
-      insets: { x: finite(item && item.frameInsets && item.frameInsets.x, 0), y: finite(item && item.frameInsets && item.frameInsets.y, 0) }
+      insets: { x: finite(item && item.frameInsets && item.frameInsets.x, 0), y: finite(item && item.frameInsets && item.frameInsets.y, 0) },
+      hero: !!(item && item.hero)
     }));
   }
   // A real column/baseline grid underpins every editorial composition. Dense
@@ -166,33 +167,93 @@
     for(let k=0;k<chosen.boxes.length;k++){const i=chosen.indices[k],p=items[i],f=chosen.fits[k];out[i]={id:p.id,x:f.x,y:f.y,width:f.width};ids.push(p.id);}
     return {items:out,pages:[{x:0,y:0,width,height,number:1,itemIds:ids,kind:'viewport',composition:chosen.family,variant,seed,grid:gridRecord(chosen.grid)}],bounds:{x:0,y:0,width,height},metrics:{composition:chosen.family,photos:items.length}};
   }
+  function storyPage(items,{width=849,height=1200,variant=0,role='story',avoidComposition}={}){
+    const hero=items.findIndex(p=>p.hero),target={width,height};
+    if(hero>=0&&items.length>1){
+      // Give the main photo a dedicated region, then constrain the actual
+      // image area of its companions. Slot size alone cannot guarantee this.
+      for(let attempt=0;attempt<8;attempt++){
+        const g=gridFor(items,target,4*2**attempt),d=g.subdivisions,side=items[hero].aspect<.95,mirror=variant%2===1;
+        const band=variant%3,mainSpan=[8,7,8][band],split=Math.round(g.rows*[.63,.59,.66][band]),gapRows=Math.max(2,Math.ceil(g.parentGutter/g.baseline));
+        const main=side?{c:(mirror?12-mainSpan:0)*d,cs:mainSpan*d,r:0,rs:g.rows,edge:mirror?'right':'left'}:{c:0,cs:12*d,r:0,rs:split,edge:mirror?'right':'left'};
+        const rest=side?{c:(mirror?0:mainSpan)*d,cs:(12-mainSpan)*d,r:0,rs:g.rows}:{c:0,cs:12*d,r:split+gapRows,rs:g.rows-split-gapRows};
+        const mainBox={...rectOf(g,main),...main},mainFit=imageFit(items[hero],mainBox,g);
+        if(!mainFit)continue;
+        const indices=[hero,...items.map((_,i)=>i).filter(i=>i!==hero)],boxes=[mainBox];
+        partition(rest,items.length-1,side?'y':'x',g,1.3,variant%4,boxes);
+        const maxArea=mainFit.width**2/items[hero].aspect/1.65;
+        const fits=[mainFit,...boxes.slice(1).map((b,k)=>imageFit(items[indices[k+1]],{...b,w:Math.min(b.w,Math.sqrt(maxArea*items[indices[k+1]].aspect))},g))];
+        if(fits.some(f=>!f))continue;
+        if(side&&items.length<=8){
+          const companions=fits.slice(1),required=companions.reduce((sum,f)=>sum+Math.ceil(f.oh/g.baseline)*g.baseline,0),available=g.rows*g.baseline-required;
+          const gapRows=Math.max(0,Math.min(Math.ceil(g.parentGutter/g.baseline),Math.floor(available/Math.max(1,companions.length-1)/g.baseline)));
+          let row=0;for(const fit of companions){fit.y=g.top+row*g.baseline+fit.oh/2;row+=Math.ceil(fit.oh/g.baseline)+gapRows;}
+        }
+        return {fits,indices,grid:g,composition:'hero-'+(side?'side':'top')+'-'+(variant%6),heroId:items[hero].id};
+      }
+      throw new RangeError('Unable to fit the main photograph');
+    }
+    const ranked=candidates(items,Math.floor(variant/FAMILIES.length),target);
+    let rank=variant%ranked.length;if(ranked[rank].family===avoidComposition)rank=(rank+1)%ranked.length;
+    const chosen=ranked[rank],g=chosen.grid;
+    if(items.length===1){
+      // A solitary image has a deliberate position on the paper instead of
+      // inheriting the top edge of an empty group container.
+      const f=chosen.fits[0],bias=role==='closing'?.56:.46;
+      const free=Math.max(0,g.rows*g.baseline-f.oh);
+      const row=Math.round(free*bias/g.baseline);
+      f.y=g.top+row*g.baseline+f.oh/2;
+    }
+    return {...chosen,composition:chosen.family,heroId:hero>=0?items[hero].id:null};
+  }
+  function pagePlan(n,moments){
+    if(!n)return [];
+    const count=moments?Math.min(9,n):n<=2?1:n<=4?2:n<=12?Math.ceil(n/2):Math.max(3,Math.ceil((n-2)/4)+2);
+    if(count===1)return [n];
+    if(count===2)return [1,n-1];
+    // For a fixed nine-page book, sparse pages still grow with large sets.
+    const edge=moments?Math.max(1,Math.floor(n/count*.5)):1;
+    const sizes=Array(count).fill(1);sizes[0]=sizes[count-1]=edge;
+    let remaining=n-sizes.reduce((a,b)=>a+b,0);
+    const weights=Array.from({length:count-2},(_,i)=>[1.2,.8,1.4,.55][i%4]);
+    const additions=distribute(remaining,weights);
+    for(let i=1;i<count-1;i++)sizes[i]+=additions[i-1];
+    return sizes;
+  }
   function reflowPage(input, page) {
     // Page membership is the scope of a local reflow, even if only one of its
     // photos is selected. Keep paper identity, numbering and ordering intact.
     const byId=new Map(normalize(input).map(p=>[p.id,p])),ids=page.itemIds;
     if(!Array.isArray(ids)||!ids.length||new Set(ids).size!==ids.length||ids.some(id=>!byId.has(id)))throw new RangeError('A page reflow requires every page member');
     const variant=((Number.isFinite(page.variant)?Math.max(0,Math.floor(page.variant)):0)%1000000)+1;
-    const layout=layoutViewport(ids.map(id=>({...byId.get(id),frameInsets:{x:0,y:0}})),{width:page.width,height:page.height,variant,avoidComposition:page.composition,gridSubdivisions:page.grid?.subdivisions});
-    const next=layout.pages[0];
-    return {items:layout.items.map(p=>({...p,x:p.x+page.x,y:p.y+page.y,presentation:'print'})),page:{...page,itemIds:ids.slice(),composition:next.composition,variant,seed:next.seed,grid:next.grid}};
+    const members=ids.map(id=>({...byId.get(id),insets:{x:0,y:0},hero:page.heroId?id===page.heroId:byId.get(id).hero}));
+    const chosen=storyPage(members,{width:page.width,height:page.height,variant,role:page.role,avoidComposition:page.composition});
+    const items=chosen.indices.map((index,k)=>({id:members[index].id,x:chosen.fits[k].x+page.x,y:chosen.fits[k].y+page.y,width:chosen.fits[k].width,presentation:'print'}));
+    return {items,page:{...page,itemIds:ids.slice(),composition:chosen.composition,variant,grid:gridRecord(chosen.grid),heroId:chosen.heroId}};
   }
   function editorial(items, width, gap, ox, oy, variant, moments=false) {
     if(!items.length)return {items:[],pages:[],width,height:0};
-    const count=moments?Math.min(9,items.length):Math.ceil(items.length/8),cols=moments?Math.min(3,count):Math.ceil(Math.sqrt(count*PAGE.height/PAGE.width));
+    // Moments is intentionally a contact-like nine-page story. Editorial is a
+    // whole-book rhythm: opening and closing pages breathe, while the middle
+    // carries compact image groups. Keep source order; never semantic-sort it.
+    const sizes=pagePlan(items.length,moments),count=sizes.length;
+    const cols=moments?Math.min(3,count):Math.ceil(Math.sqrt(count*PAGE.height/PAGE.width));
     const scale=width/PAGE.width,pageH=PAGE.height*scale,pageGap=Math.max(gap,width*.055),out=[],pages=[];
-    const perPage=Math.floor(items.length/count),extra=items.length%count;let start=0,previousFamily='';
+    let start=0,previousFamily='';
     for(let page=0;page<count;page++){
-      const n=perPage+(page<extra?1:0),batch=items.slice(start,start+n),seed=hash(batch.map(p=>String(p.id)+':'+p.aspect.toFixed(4)).join('|')),ranked=candidates(batch,Math.floor(variant/FAMILIES.length));
-      let rank=(variant+page)%ranked.length;if(ranked[rank].family===previousFamily)rank=(rank+1)%ranked.length;
-      let chosen=ranked[rank];
-      const slots=chosen.boxes,indices=chosen.indices;previousFamily=chosen.family;
+      const n=sizes[page],batch=items.slice(start,start+n),seed=hash(batch.map(p=>String(p.id)+':'+p.aspect.toFixed(4)).join('|'));
+      const role=page===0?'opening':page===count-1?'closing':n<=2?'pause':'story';
+      const chosen=storyPage(batch,{variant:variant+page,role,avoidComposition:previousFamily}),indices=chosen.indices;
+      previousFamily=chosen.composition;
       const x=ox+(page%cols)*(width+pageGap),y=oy+Math.floor(page/cols)*(pageH+pageGap);
-      const pageItems=[];
+      // Metadata follows the authored reading order, independent of the
+      // geometry solver's aspect-to-slot assignment.
+      const pageItems=batch.map(p=>p.id);
       for(let k=0;k<n;k++){
         const i=start+indices[k],p=items[i],f=chosen.fits[k];
-        out[i]={id:p.id,x:x+f.x*scale,y:y+f.y*scale,width:f.width*scale,presentation:'print'};pageItems.push(p.id);
+        out[i]={id:p.id,x:x+f.x*scale,y:y+f.y*scale,width:f.width*scale,presentation:'print'};
       }
-      pages.push({x,y,width,height:pageH,number:page+1,itemIds:pageItems,composition:chosen.family,variant,seed,grid:gridRecord(chosen.grid),...(moments?{kind:'moments'}:{})});start+=n;
+      pages.push({x,y,width,height:pageH,number:page+1,itemIds:pageItems,composition:chosen.composition,variant:variant+page,seed,grid:gridRecord(chosen.grid),kind:moments?'moments':'magazine',role,heroId:chosen.heroId});start+=n;
     }
     return {items:out,pages,width:Math.min(cols,count)*(width+pageGap)-pageGap,height:Math.ceil(count/cols)*(pageH+pageGap)-pageGap};
   }

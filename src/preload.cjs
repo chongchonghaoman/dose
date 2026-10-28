@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('lighttable', {
   previewLut: hash => ipcRenderer.invoke('film:preview-lut',hash),
   importLut: () => ipcRenderer.invoke('film:import'),
   exportPhotos: (ids,format) => ipcRenderer.invoke('photos:export',ids,format),
+  exportMagazine: options => ipcRenderer.invoke('magazine:export',options),
+  onMagazineProgress: fn => {const listener=(_,progress)=>fn(progress);ipcRenderer.on('magazine:progress',listener);return()=>ipcRenderer.removeListener('magazine:progress',listener);},
   photoAvailability: ids => ipcRenderer.invoke('photos:availability',ids),
   chooseGridOutput: () => ipcRenderer.invoke('grid:choose-output'),
   exportGrid: request => ipcRenderer.invoke('grid:write',request),

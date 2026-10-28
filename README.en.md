@@ -6,7 +6,7 @@ dose is a local Windows photo app with automatic magazine layouts. It arranges p
 
 ![dose photo workspace](docs/media/hero.png)
 
-- **Magazine layouts.** Generate pages with varied image sizes, whitespace and page numbers. Change the composition or reflow an individual page; use the nine-page mode for a larger set.
+- **Magazine layouts.** Sequence a photo-only opening, image groups and a closing page. Designate a main photo and retain its emphasis when reflowing. Export individual JPEG or PNG pages at 2400, 3600 or 4800 pixels on the long edge, with embedded sRGB profiles.
 - **Light table.** Arrange photos freely or use grids and sleeves. Search, filter and sort the library.
 - **Single-photo view.** Zoom, pan, step through the current selection and hold Space to compare the original. Return without losing the table layout.
 - **Film looks.** Browse LUT previews rendered from the current photo, save favorites and import `.cube` / HaldCLUT files.

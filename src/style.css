@@ -33,6 +33,21 @@
 .share-settings{min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:16px}.share-controls{display:flex;min-height:0;flex-direction:column;gap:13px;overflow-y:auto;scrollbar-width:thin;padding:2px 6px 6px 2px}.share-field{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;font-size:11px;color:var(--ink)}.share-field output{color:var(--muted);font-family:Consolas,monospace}.share-field input{width:100%;grid-column:1/-1}.share-field select{grid-column:1/-1;width:100%;min-width:0;padding:8px;border:1px solid var(--line);border-radius:9px;background:#303034;color:var(--ink);font:inherit}.share-controls>.text-btn{min-height:34px;align-self:flex-start;padding:0 10px;margin-top:-5px;font-size:11px;border:1px solid var(--line)}.share-check{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted)}.share-check input{accent-color:var(--blue)}
 .share-export{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--line)}.share-export small{font-size:10px;color:var(--muted)}.share-export .primary-btn{min-height:40px;padding:9px 12px;box-shadow:none}#share-status{margin:0;font-size:11px;line-height:1.5;color:var(--ink)}#share-open-folder{font-size:11px;min-height:28px}
 @media(max-width:1000px){#share-dialog{padding:16px}.share-body{grid-template-columns:minmax(0,1fr) 200px;gap:14px}.share-controls{gap:10px}.share-head h2{font-size:20px}.share-heading{gap:10px}}
+/* Magazine controls sit outside the printed page. */
+#magazine-tools{position:absolute;top:12px;right:12px;display:flex;align-items:center;gap:8px;padding:3px 5px 3px 12px;border:1px solid #ffffff30;border-radius:var(--pill);background:#292C28ed;box-shadow:0 4px 16px #0002}
+#magazine-count{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+#magazine-tools .text-btn{min-height:30px;padding-inline:10px}
+#set-hero[aria-pressed=true]{color:var(--blue);background:#ffffff12}
+#magazine-dialog{width:min(420px,calc(100vw - 32px));padding:24px}
+.magazine-export-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.magazine-export-head h2{margin:0;font-size:20px}
+#magazine-summary{color:var(--muted);font-size:12px;margin:8px 0 24px}
+.magazine-export-options{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.magazine-export-options label{display:flex;flex-direction:column;gap:8px;color:var(--muted);font-size:12px}
+.magazine-export-options select{width:100%;height:38px;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font:inherit}
+#magazine-status{margin:18px 0 0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.magazine-export-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:24px}
+.magazine-export-actions .primary-btn{padding:10px 17px;box-shadow:none}
 /* LUT inspector */
 .film-panel{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;margin:12px 14px 18px 0;padding:16px;border:1px solid var(--line);border-radius:20px;background:var(--shell)}
 .film-panel-head{display:flex;flex:none;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px}

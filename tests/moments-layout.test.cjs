@@ -6,7 +6,7 @@ function check(n,variant=0){
  assert.equal(pages.length,Math.min(9,n));assert.equal(result.items.length,n);assert.equal(JSON.stringify(photos),before);
  const ids=pages.flatMap(p=>p.itemIds);assert.equal(ids.length,n);assert.equal(new Set(ids).size,n);
  const byId=new Map(result.items.map((p,i)=>[p.id,{...p,h:p.width/photos[i].aspect}]));
- if(n){const counts=pages.map(p=>p.itemIds.length);assert(Math.max(...counts)-Math.min(...counts)<=1);}
+ if(n>10){const counts=pages.map(p=>p.itemIds.length);assert(Math.max(...counts)>Math.min(...counts),'a fixed page count still needs changes in density');}
  for(const [index,page]of pages.entries()){
   assert.equal(page.kind,'moments');assert.equal(page.number,index+1);assert.equal(page.width,1000);assert(Math.abs(page.height/page.width-1200/849)<1e-10);
   if(index)assert.notEqual(page.composition,pages[index-1].composition);
@@ -22,5 +22,5 @@ check(5000);
 const photos=input(166),first=check(166),second=check(166,1);assert.notDeepEqual(first.items,second.items);assert.deepEqual(layoutPhotos(photos,{style:'moments',availableWidth:1000,variant:0}),first);
 const cleaned=cleanState({photos:photos.map(p=>({id:p.id,path:path.resolve(__dirname,p.id+'.jpg'),width:p.aspect*1000,height:1000,adjustments:{exposure:.4,saturation:12}})),items:first.items.map(p=>({...p,photoId:p.id,layoutSizing:'free'})),editorialPages:first.pages,layoutStyle:'moments',momentsRevision:7});
 assert.equal(cleaned.layoutStyle,'moments');assert.equal(cleaned.momentsRevision,7);assert.equal(cleaned.editorialPages.length,9);assert(cleaned.editorialPages.every(p=>p.kind==='moments'));assert(cleaned.photos.every(p=>p.adjustments.exposure===.4&&p.adjustments.saturation===12));assert.deepEqual(cleanState(cleaned),cleaned);
-assert.equal(layoutPhotos(photos,{style:'editorial'}).pages.length,21,'Ordinary magazine retains its eight-photo pagination');
-console.log('Moments: nine balanced pages, 3x3 ordering, full coverage through 5000 photos, variation, persistence and unchanged magazine passed');
+assert.equal(layoutPhotos(photos,{style:'editorial'}).pages.length,43,'Ordinary magazine gives the opening and closing their own page');
+console.log('Moments: nine paced pages, 3x3 ordering, full coverage through 5000 photos, variation and persistence passed');

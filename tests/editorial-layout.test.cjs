@@ -18,8 +18,8 @@ function check(mode, n,variant=0) {
 }
 for (const mode of ['editorial', 'grid', 'contact']) for (const n of [1, 2, 3, 4, 6, 12, 30]) check(mode, n);
 const editorial12 = layoutPhotos(Array.from({ length: 12 }, (_, i) => ({ id: i, aspect: 1.2, frameInsets: { x: 0.1, y: 0.05 } })), { style: 'editorial', availableWidth: 960, gap: 16 });
-assert.ok(editorial12.bounds.height < 2400, '12-up editorial should remain a manageable canvas');
-assert.equal(editorial12.pages.length,2);
+assert.ok(editorial12.bounds.height < 3200, 'a six-page story should remain a manageable canvas');
+assert.equal(editorial12.pages.length,6);
 assert(editorial12.items.every(p=>p.presentation==='print'));
 const photos=[.7,1.5,1.5,1,2,1.5,1.5,1.8].map((aspect,id)=>({id,aspect})),variations=Array.from({length:7},(_,variant)=>layoutPhotos(photos,{style:'editorial',availableWidth:849,variant}));
 assert(variations.every(r=>r.pages[0].height===1200&&r.pages[0].width===849));

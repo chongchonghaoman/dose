@@ -12,6 +12,7 @@ const {createHeicCache}=require('./heic.cjs');
 const {createDngCache}=require('./dng.cjs');
 const {hasLegacyAutoFit,backupLegacyAutoFit}=require('./auto-fit-migration.cjs');
 const {writeGridExport}=require('./grid-export.cjs');
+const {writeMagazineExport}=require('./magazine-export.cjs');
 const {photoAvailability}=require('./photo-availability.cjs');
 const {createReferenceEditor}=require('./reference-editor.cjs');
 const {createUiPreferences}=require('./ui-preferences.cjs');
@@ -171,6 +172,22 @@ app.whenReady().then(async () => {
     finally{gridWrite=null;exporting=false;}
   });
   ipcMain.handle('state:save', (_, next) => persist(next).then(() => true));
+  ipcMain.handle('magazine:export',async(event,options)=>{
+    if(event.sender!==win?.webContents)throw Error('Unknown window');
+    if(exporting)throw Error('请等待当前导出完成。');
+    const snapshot=structuredClone(state);
+    snapshot.editorialPages=(snapshot.editorialPages||[]).filter(p=>p.kind!=='viewport');
+    if(!snapshot.editorialPages.length)throw Error('请先生成杂志页面。');
+    exporting=true;
+    try{
+      const result=await dialog.showOpenDialog(win,{title:'选择杂志页面导出位置',properties:['openDirectory','createDirectory']});
+      if(result.canceled)return {canceled:true};
+      const output=await writeMagazineExport({state:snapshot,parent:result.filePaths[0],format:options?.format,longEdge:options?.longEdge,
+        resolveImage:async(photo,size)=>{if(!allowed.has(photo.id))throw Error('照片不可用：'+photo.name);return imageFile(photo.id,size,photo.adjustments);},
+        onProgress:progress=>{if(!win.isDestroyed())win.webContents.send('magazine:progress',progress);}});
+      lastExportFolder=output.folder;return output;
+    }finally{exporting=false;}
+  });
   ipcMain.handle('film:status',()=>filmStatus());
   ipcMain.handle('film:spectral-status',async()=>{try{return await renderFilm({kind:'spectral-status'});}catch(e){return {available:false,films:[],papers:[],error:e.message};}});
   ipcMain.handle('film:auto-fit',async(_,request)=>{

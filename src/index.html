@@ -45,7 +45,8 @@
         <div class="photo-view-nav"><button id="photo-previous" class="icon-btn" aria-label="上一张照片" title="上一张 · ←">←</button><button id="photo-next" class="icon-btn" aria-label="下一张照片" title="下一张 · →">→</button></div>
       </div>
       <div id="empty-state"><div class="empty-film" aria-hidden="true"><div><svg><use href="#i-sun"/></svg></div></div><h2>放入照片</h2><button id="empty-import" class="primary-btn"><svg><use href="#i-add"/></svg>添加照片</button></div>
-      <div id="selection-bar" hidden><span id="selection-name"></span><button id="reflow-page" class="text-btn" title="重新编排本页全部照片，其他页面保持不变" hidden><svg><use href="#i-grid"/></svg>重排本页</button><button id="rotate-left" class="icon-btn" title="逆时针旋转 · [" aria-label="逆时针旋转">↶</button><button id="rotate-right" class="icon-btn" title="顺时针旋转 · ]" aria-label="顺时针旋转"><svg><use href="#i-rotate"/></svg></button><button id="scale-down" class="icon-btn" title="缩小胶片" aria-label="缩小胶片">−</button><button id="scale-up" class="icon-btn" title="放大胶片" aria-label="放大胶片">+</button><button id="sprockets" class="text-btn" aria-pressed="true" title="显示或隐藏所选照片的胶卷齿孔">齿孔</button><button id="mount" class="text-btn" title="切换薄胶片 / 装框幻灯片">装框</button><button id="remove" class="text-btn" title="移出台面，保留照片 · Delete">移出</button></div>
+      <div id="selection-bar" hidden><span id="selection-name"></span><button id="set-hero" class="text-btn" aria-pressed="false" title="让这张照片成为所在页的主图" hidden>设为主图</button><button id="reflow-page" class="text-btn" title="重新编排本页全部照片，其他页面保持不变" hidden><svg><use href="#i-grid"/></svg>重排本页</button><button id="rotate-left" class="icon-btn" title="逆时针旋转 · [" aria-label="逆时针旋转">↶</button><button id="rotate-right" class="icon-btn" title="顺时针旋转 · ]" aria-label="顺时针旋转"><svg><use href="#i-rotate"/></svg></button><button id="scale-down" class="icon-btn" title="缩小胶片" aria-label="缩小胶片">−</button><button id="scale-up" class="icon-btn" title="放大胶片" aria-label="放大胶片">+</button><button id="sprockets" class="text-btn" aria-pressed="true" title="显示或隐藏所选照片的胶卷齿孔">齿孔</button><button id="mount" class="text-btn" title="切换薄胶片 / 装框幻灯片">装框</button><button id="remove" class="text-btn" title="移出台面，保留照片 · Delete">移出</button></div>
+      <div id="magazine-tools" hidden><span id="magazine-count"></span><button id="export-magazine" class="text-btn"><svg><use href="#i-save"/></svg>导出页面</button></div>
       <div id="drop-cover" hidden><svg><use href="#i-add"/></svg><strong>放入照片</strong></div>
     </section>
     <aside id="film-panel" class="film-panel" hidden aria-label="基础调节">
@@ -92,6 +93,16 @@
       </div><div class="share-export"><small>1440 × 1440 · JPEG</small><p id="share-status" role="status" hidden></p><button id="share-export" class="primary-btn">导出九张</button><button id="share-open-folder" class="text-btn" hidden>打开导出文件夹</button></div>
       </div>
     </div>
+  </dialog>
+  <dialog id="magazine-dialog" aria-labelledby="magazine-title">
+    <div class="magazine-export-head"><h2 id="magazine-title">导出页面</h2><button id="magazine-close" class="icon-btn" aria-label="关闭页面导出"><svg><use href="#i-close"/></svg></button></div>
+    <p id="magazine-summary"></p>
+    <div class="magazine-export-options">
+      <label>格式<select id="magazine-format"><option value="jpeg">JPEG</option><option value="png">PNG</option></select></label>
+      <label>长边<select id="magazine-size"><option value="2400">2400 px</option><option value="3600" selected>3600 px</option><option value="4800">4800 px</option></select></label>
+    </div>
+    <p id="magazine-status" role="status" hidden></p>
+    <div class="magazine-export-actions"><button id="magazine-open-folder" class="text-btn" hidden>打开文件夹</button><button id="magazine-export-start" class="primary-btn">选择文件夹并导出</button></div>
   </dialog>
   <dialog id="lut-dialog" aria-labelledby="lut-title">
     <div class="lut-browser-head"><h2 id="lut-title">胶片风格</h2><button id="lut-close" class="icon-btn" aria-label="关闭风格浏览器"><svg><use href="#i-close"/></svg></button></div>
