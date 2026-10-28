@@ -6,7 +6,7 @@
 
 A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
 
-v0.1.111 新增底栏多选删除，并修复放大镜卡住、移动抖动和掉帧问题。见[更新说明](docs/releases/v0.1.111.md)，可通过应用内「检查更新…」获取。
+v0.1.114 新增诊断采样：遇到问题时录一份诊断记录上传，并把诊断编号发给维护者。见[更新说明](docs/releases/v0.1.114.md)与[操作指引](docs/本次更新操作指引-v0.1.114.md)，可通过应用内「检查更新…」获取。
 
 ## 下载与运行
 
@@ -16,9 +16,9 @@ v0.1.111 新增底栏多选删除，并修复放大镜卡住、移动抖动和�
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-当前版本 **[v0.1.111](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.111)**：新增底栏多选删除，改善放大镜稳定性。
+当前版本 **[v0.1.114](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.114)**：新增诊断采样与首次启动操作指引。
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.111/LightTable-v0.1.111-macOS-arm64.zip)**
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.114/LightTable-v0.1.114-macOS-arm64.zip)**
 
 从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
 
@@ -34,7 +34,11 @@ v0.1.111 新增底栏多选删除，并修复放大镜卡住、移动抖动和�
 
 ## 本版更新说明
 
-首次打开v0.1.111时介绍底栏多选删除的操作，并说明放大镜稳定性改进。点击「开始观片」继续。本次说明仅自动展示一次，菜单「帮助 → 本次更新…」可以重看。旧版操作指南保留在文档中。
+首次打开v0.1.114时显示诊断采样的三步操作指引，需走完才进入观片；中途退出下次启动会再次出现。走完后可在菜单「帮助 → 本次更新…」重看。详见[操作指引](docs/本次更新操作指引-v0.1.114.md)，旧版操作指南保留在文档中。
+
+## 诊断采样
+
+菜单「观片台 → 开始诊断采样…」录制最长15分钟的状态与帧耗时汇总，确认后上传到维护者的私有存储，30天后删除；不含照片、截图、路径、坐标或电脑名。上传后请把显示的诊断编号发给维护者。接收函数源码见 [Cloud/diagnostics](Cloud/diagnostics/README.md)。
 
 ## 功能
 

@@ -4,6 +4,7 @@ import SwiftUI
 struct LightTableApp: App {
     @State private var model = TableModel()
     @StateObject private var updater = AppUpdater()
+    @StateObject private var diagnostics = DiagnosticsSampling.shared
     var body: some Scene {
         WindowGroup("观片台") {
             ContentView(model: model)
@@ -26,6 +27,14 @@ struct LightTableApp: App {
         .commands {
             FeatureGuideCommands()
             CommandGroup(after: .appInfo) {
+                Button("开始诊断采样…", action: {
+                    diagnostics.start(loupeEnabled: model.loupeEnabled, edrEnabled: model.backlightEDREnabled)
+                })
+                    .disabled(diagnostics.isRecording || diagnostics.hasPendingReport)
+                Button(diagnostics.isRecording ? "停止并上传诊断…" : "上传待处理诊断…",
+                       action: diagnostics.stopAndPrompt)
+                    .disabled(!diagnostics.isRecording && !diagnostics.hasPendingReport)
+                Divider()
                 Button("检查更新…", action: updater.checkForUpdates)
                     .disabled(!updater.canCheckForUpdates)
                 Toggle("运行期间自动检查更新", isOn: Binding(get: { updater.automaticChecks },

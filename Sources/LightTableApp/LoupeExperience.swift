@@ -520,6 +520,7 @@ struct LoupeKeyboard: NSViewRepresentable {
         private var windowActive = false
         private var held = false
         private var tabHeld = false
+        private var lastAvailability: Bool?
         private var edrKeyCode: UInt16?
         private var monitor: Any?
         private var resignObserver: NSObjectProtocol?
@@ -582,7 +583,12 @@ struct LoupeKeyboard: NSViewRepresentable {
 
         private func resetLoupe() { held = false; tabHeld = false; cancelled?() }
         func reset() { edrKeyCode = nil; resetLoupe() }
-        private func updateAvailability() { availabilityChanged?(enabled && loupeEnabled && windowActive) }
+        private func updateAvailability() {
+            let available = enabled && loupeEnabled && windowActive
+            guard available != lastAvailability else { return }
+            lastAvailability = available
+            availabilityChanged?(available)
+        }
         func stop() {
             windowActive = false
             updateAvailability()

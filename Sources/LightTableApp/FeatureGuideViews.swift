@@ -25,6 +25,7 @@ struct FeatureGuideCommands: Commands {
 
 struct FeatureGuideWelcome: View {
     let version: String
+    var required = false
     let close: () -> Void
     let tour: () -> Void
 
@@ -36,19 +37,17 @@ struct FeatureGuideWelcome: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("观片台已更新").font(.system(size: 21, weight: .semibold))
-                    Text("v\(version) · 多选删除与体验优化")
+                    Text("v\(version) · 诊断采样")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }.padding(.bottom, 24)
-            feature("checkmark.circle", title: "底栏多选删除",
-                    text: "右键照片选择「多选」，再点击照片增减选择。点「删除所选」或按 Delete 一次删除。",
-                    note: "点「取消」或按 Esc 退出。磁盘原图保留。")
-                .padding(.bottom, 20)
-            feature("magnifyingglass", title: "放大镜更流畅",
-                    text: "修复部分 Mac 开启放大镜卡住的问题，改善移动时的抖动和掉帧。")
+            feature("waveform.path.ecg", title: "诊断采样",
+                    text: "遇到卡顿或显示异常时，在「观片台」菜单选「开始诊断采样…」，复现问题后选「停止并上传诊断…」。",
+                    note: "上传前列出数据类别并需确认，不含照片、路径或电脑名。上传后一定要把诊断编号发给维护者。")
             HStack(spacing: 10) {
                 Spacer()
-                Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle(primary: true))
+                if !required { Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle()) }
+                Button("看看怎么用", action: tour).buttonStyle(FeatureGuideButtonStyle(primary: true))
                     .keyboardShortcut(.defaultAction)
             }.padding(.top, 30)
             Text("以后可在「帮助 → 本次更新」重看")
@@ -59,11 +58,14 @@ struct FeatureGuideWelcome: View {
         .foregroundStyle(Color(white: 0.15))
         .background(Color(white: 0.98))
         .overlay(alignment: .topTrailing) {
-            Button(action: close) { Image(systemName: "xmark").font(.system(size: 11)).frame(width: 26, height: 26) }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-                .accessibilityLabel("关闭更新说明").padding(10)
+            if !required {
+                Button(action: close) { Image(systemName: "xmark").font(.system(size: 11)).frame(width: 26, height: 26) }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .accessibilityLabel("关闭更新说明").padding(10)
+            }
         }
-        .onExitCommand(perform: close)
+        .onExitCommand { if !required { close() } }
+        .interactiveDismissDisabled(required)
     }
 
     private func feature(_ icon: String, title: String, text: String, note: String? = nil) -> some View {
@@ -113,6 +115,7 @@ struct FeatureGuideTour: View {
     let hasPhotos: Bool
     let selectedCount: Int
     let loupeEnabled: Bool
+    var required = false
     let previous: () -> Void
     let next: () -> Void
     let close: () -> Void
@@ -122,26 +125,18 @@ struct FeatureGuideTour: View {
         FeatureGuideTarget.releaseTour(step: step, loupeEnabled: loupeEnabled)
     }
     private var title: String {
-        ["导入照片，按底栏分类", "拿到台面，再收回原栏", "单张按 Delete，整栏用右键",
-         "选择放大镜", "按住空格，凑近照片", "切换观察倍率"][step]
+        ["打开「观片台」菜单", "照常操作，复现问题", "停止并上传，发送编号"][step]
     }
     private var details: String {
         switch step {
-        case 0: return "「从文件夹导入」会追加到当前底栏。\n点标签右侧的 ➕ 新建底栏，\n点击标签切换要整理的那一栏。"
-        case 1: return "从底栏拖一张照片到台面，底栏里\n就会隐藏它。选中台面照片按 Delete，\n或右键收回，就回到原底栏、原顺序。"
-        case 2: return "点选底栏照片，按 Delete 删除该张。\n右键底栏标签，选择「删除底栏」可删除整栏。\n两种操作都会移除台面对应散片，磁盘原图保留。"
-        case 3: return "点击圈出的放大镜，或按 V。\n把鼠标移到照片上，观察中央细节\n与外围的镜片曲率。"
-        case 4: return "在照片上按住空格，松开退回。\n凑近时继续移动鼠标查看细节，\n镜缘会保留较轻的折射与反光。"
-        default: return "用右侧倍率滑块选择「原倍率／8×」，\n也可以按 Tab 切换。按住空格看变化，\n小放大镜仍保持 1.5×。"
+        case 0: return "遇到卡顿、放大镜异常或显示问题时，\n点屏幕左上角菜单栏的「观片台」，\n选择「开始诊断采样…」。"
+        case 1: return "像平常一样拖片、开关放大镜或 EDR，\n让问题再出现一次。采样最长 15 分钟，\n只记录状态和每秒帧耗时，不含照片。"
+        default: return "回到「观片台」菜单，\n选择「停止并上传诊断…」，\n确认要发送的内容后上传。"
         }
     }
     private var context: String? {
-        if step == 1 && selectedCount > 1 { return "已选中 \(selectedCount) 张，按 Delete 可一起收回。" }
-        if step == 1 || step >= 3 {
-            if !hasPhotos { return "台面还没有照片，可从底栏拖入后再试。" }
-            if step == 1 && loupeEnabled { return "按 A 切回普通指针，可点选或多选照片。" }
-            if !loupeEnabled && step > 3 { return "先点击圈出的放大镜，或按 V。" }
-        }
+        if step == 1 && !hasPhotos { return "台面还没有照片，可先导入几张再复现。" }
+        if step == 2 { return "网络失败时记录保留在本机，可从菜单重试；取消上传会删除记录。" }
         return nil
     }
 
@@ -149,14 +144,15 @@ struct FeatureGuideTour: View {
         GeometryReader { proxy in
             let rect = anchors[target].map { proxy[$0] }
             let width = min(310.0, max(240, proxy.size.width - 32))
-            let proposedX = (rect?.maxX ?? proxy.size.width - 24) - width / 2
+            let proposedX = target == .menuBar ? width / 2 + 8 : (rect?.maxX ?? proxy.size.width - 24) - width / 2
             let isTrayTarget = target == .trayImport || target == .trayTabs
             let anchorY = target == .viewingArea ? (rect?.minY ?? 0) + 64 : (rect?.maxY ?? 52)
             let proposedY = isTrayTarget
                 ? (rect?.minY ?? boardFrame.maxY) - cardHeight / 2 - 14
                 : anchorY + cardHeight / 2 + 14
-            let x = min(proxy.size.width - width / 2 - 16, max(width / 2 + 16, proposedX))
-            let y = min(proxy.size.height - cardHeight / 2 - 16, max(cardHeight / 2 + 16, proposedY))
+            let x = target == .menuBar ? proposedX : min(proxy.size.width - width / 2 - 16, max(width / 2 + 16, proposedX))
+            let y = target == .menuBar ? cardHeight / 2 + 8
+                : min(proxy.size.height - cardHeight / 2 - 16, max(cardHeight / 2 + 16, proposedY))
             if let rect {
                 RoundedRectangle(cornerRadius: 20).strokeBorder(Color.accentColor.opacity(0.8), lineWidth: 2)
                     .frame(width: rect.width + 8, height: rect.height + 8)
@@ -164,13 +160,24 @@ struct FeatureGuideTour: View {
                     .allowsHitTesting(false).accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 12) {
+                if target == .menuBar {
+                    Label("屏幕左上角菜单栏「观片台」", systemImage: "arrow.up.left")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.accentColor)
+                }
                 HStack {
                     Text("\(step + 1) / \(FeatureGuideState.tourStepCount)").monospacedDigit()
                     Spacer()
-                    Button("跳过", action: close).buttonStyle(.plain).accessibilityLabel("跳过新功能指引")
+                    if !required { Button("跳过", action: close).buttonStyle(.plain).accessibilityLabel("跳过新功能指引") }
                 }.font(.system(size: 11)).foregroundStyle(.secondary)
                 Text(title).font(.system(size: 15, weight: .semibold)).accessibilityAddTraits(.isHeader)
                 Text(details).font(.system(size: 13)).foregroundStyle(.secondary).lineSpacing(4)
+                if step == 2 {
+                    Label("上传后，一定要把显示的诊断编号发给维护者！没有编号就找不到你的记录。",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange)
+                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                }
                 if let context { Text(context).font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(2) }
                 HStack {
                     Button("上一步", action: previous).buttonStyle(.plain).font(.system(size: 12))

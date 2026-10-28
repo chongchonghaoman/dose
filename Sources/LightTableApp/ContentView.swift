@@ -94,6 +94,7 @@ struct ContentView: View {
         }
         .onPreferenceChange(SlideshowTraySnapshotKey.self) { slideshowTray = $0 }
         .onPreferenceChange(LoupeSceneKey.self) { scene in
+            DiagnosticsSampling.shared.record(scene == nil ? .loupeSceneUnavailable : .loupeSceneAvailable)
             loupe.scene = scene
             if scene == nil { loupe.cancel() }
         }
@@ -105,7 +106,7 @@ struct ContentView: View {
             if let step = guideStep, !model.slideshowMode && !model.returnToPastMode && !model.albumEditorPresented {
                 FeatureGuideTour(step: step, anchors: anchors, boardFrame: canvasFrame,
                     hasPhotos: !model.tableIDs.isEmpty, selectedCount: model.selectedIDs.count,
-                    loupeEnabled: model.loupeEnabled,
+                    loupeEnabled: model.loupeEnabled, required: featureGuide.mustComplete,
                     previous: { featureGuide.previous(in: guideWindowID) },
                     next: { featureGuide.advance(in: guideWindowID) },
                     close: { featureGuide.finish(in: guideWindowID) })
@@ -126,24 +127,33 @@ struct ContentView: View {
         }
         .sheet(isPresented: Binding(get: { featureGuide.isWelcome(in: guideWindowID) },
                                    set: { if !$0 { featureGuide.dismissWelcome(in: guideWindowID) } })) {
-            FeatureGuideWelcome(version: featureGuide.version,
+            FeatureGuideWelcome(version: featureGuide.version, required: featureGuide.mustComplete,
                 close: { featureGuide.finish(in: guideWindowID) },
                 tour: { featureGuide.beginTour(in: guideWindowID) })
                 .onAppear { featureGuide.didPresent(in: guideWindowID) }
         }
         .background {
             LoupeKeyboard(enabled: tableKeyboardEnabled,
-                          pressed: { loupe.press() },
-                          released: { loupe.release(reduceMotion: reduceMotion) },
-                          cancelled: { loupe.cancel() },
+                          pressed: { let result = loupe.press(); DiagnosticsSampling.shared.record(.loupePressed); return result },
+                          released: { loupe.release(reduceMotion: reduceMotion); DiagnosticsSampling.shared.record(.loupeReleased) },
+                          cancelled: { loupe.cancel(); DiagnosticsSampling.shared.record(.loupeCancelled) },
                           cycleMagnification: { loupe.cycleMagnification() },
                           loupeEnabled: model.loupeEnabled,
                           toggleEDR: { model.backlightEDREnabled.toggle() },
-                          availabilityChanged: { loupe.cursorEnabled = $0 }).frame(width: 0, height: 0)
+                          availabilityChanged: { available in
+                              loupe.cursorEnabled = available
+                              DiagnosticsSampling.shared.record(available ? .pointerTrackingAvailable : .pointerTrackingUnavailable)
+                          }).frame(width: 0, height: 0)
         }
         .task(id: flight?.phase == .dragging) { await autoPanDraggedPhoto() }
         .task(id: entryPreparationID) { await prepareSlideshowTask() }
-        .onChange(of: model.loupeEnabled) { _, enabled in handleLoupeEnabledChange(enabled) }
+        .onChange(of: model.loupeEnabled) { _, enabled in
+            DiagnosticsSampling.shared.record(enabled ? .loupeEnabled : .loupeDisabled)
+            handleLoupeEnabledChange(enabled)
+        }
+        .onChange(of: model.backlightEDREnabled) { _, enabled in
+            DiagnosticsSampling.shared.record(enabled ? .edrEnabled : .edrDisabled)
+        }
         .onChange(of: model.activeTrayID) { _, _ in handleActiveTrayChange() }
         .onChange(of: model.slideshowMode) { _, active in handleSlideshowModeChange(active) }
         .onExitCommand { handleExitCommand() }

@@ -3,20 +3,11 @@ import Observation
 
 enum FeatureGuideTarget: Hashable {
     case tools, magnification, removal, overview, loupe, viewingArea, trayImport, trayTabs
+    /// The app menu lives outside the window; no view anchors it, so the card sits top-left.
+    case menuBar
 
     static func releaseTour(step: Int, loupeEnabled: Bool) -> Self {
-        switch step {
-        case 0: return .trayImport
-        case 1: return .viewingArea
-        case 2: return .trayTabs
-        default: break
-        }
-        guard loupeEnabled else { return .loupe }
-        switch step {
-        case 4: return .viewingArea
-        case 5: return .magnification
-        default: return .loupe
-        }
+        step == 1 ? .viewingArea : .menuBar
     }
 }
 
@@ -24,11 +15,13 @@ enum FeatureGuideTarget: Hashable {
 @MainActor @Observable
 final class FeatureGuideState {
     static let shared = FeatureGuideState()
-    static let releaseVersion = "0.1.111"
+    static let releaseVersion = "0.1.114"
     static let seenKey = "featureGuide.presentedVersions"
     static let seenRevisionKey = "featureGuide.presentedRevisions"
-    static let contentRevision = "tray-selection-1"
-    static let tourStepCount = 0
+    static let contentRevision = "diagnostics-1"
+    static let tourStepCount = 3
+    /// Diagnostics help users get their own bugs fixed, so the first run cannot skip the tour.
+    static let tourRequired = true
 
     enum Phase: Equatable {
         case idle
@@ -53,6 +46,8 @@ final class FeatureGuideState {
     var hasBeenPresented: Bool {
         (defaults.stringArray(forKey: Self.seenRevisionKey) ?? []).contains(presentationID)
     }
+    /// Help replays stay skippable once the tour has been completed.
+    var mustComplete: Bool { Self.tourRequired && !hasBeenPresented }
 
     func isWelcome(in window: UUID) -> Bool { owner == window && phase == .welcome }
     func step(in window: UUID) -> Int? {
@@ -74,7 +69,11 @@ final class FeatureGuideState {
 
     /// Called by the actual sheet's onAppear, not by a startup timer.
     func didPresent(in window: UUID) {
-        guard isWelcome(in: window) else { return }
+        guard isWelcome(in: window), !Self.tourRequired else { return }
+        acknowledge()
+    }
+
+    private func acknowledge() {
         var versions = defaults.stringArray(forKey: Self.seenKey) ?? []
         if !versions.contains(version) { versions.append(version) }
         defaults.set(versions, forKey: Self.seenKey)
@@ -90,7 +89,9 @@ final class FeatureGuideState {
 
     func advance(in window: UUID) {
         guard let step = step(in: window) else { return }
-        if step + 1 < Self.tourStepCount { phase = .tour(step + 1) } else { finish(in: window) }
+        if step + 1 < Self.tourStepCount { phase = .tour(step + 1); return }
+        if Self.tourRequired { acknowledge() }
+        finish(in: window)
     }
 
     func previous(in window: UUID) {
@@ -100,7 +101,7 @@ final class FeatureGuideState {
 
     func dismissWelcome(in window: UUID) {
         // SwiftUI may dismiss the sheet after beginTour; preserve that next phase.
-        if isWelcome(in: window) { finish(in: window) }
+        if isWelcome(in: window) && !mustComplete { finish(in: window) }
     }
 
     func finish(in window: UUID) {

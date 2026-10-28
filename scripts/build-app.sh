@@ -3,6 +3,13 @@ set -eu
 cd "$(dirname "$0")/.."
 python3 scripts/check-source-boundary.py --tree .
 version=$(cat VERSION)
+diagnosticsEndpoint="${LT_DIAGNOSTICS_UPLOAD_URL:-}"
+if [[ -n "$diagnosticsEndpoint" ]]; then
+    if [[ ! "$diagnosticsEndpoint" =~ '^https://([A-Za-z0-9-]+\.)+[A-Za-z0-9-]+(:[0-9]{1,5})?([/?#][^[:space:]"<>]*)?$' ]]; then
+        print -u2 "LT_DIAGNOSTICS_UPLOAD_URL must be a valid HTTPS URL"
+        exit 2
+    fi
+fi
 swift build -c release
 binary=$(swift build -c release --show-bin-path)
 app="${1:-$PWD/dist/观片台.app}"
@@ -64,6 +71,9 @@ config = plistlib.loads(Path(sys.argv[2]).read_bytes())
 info.update(config)
 path.write_bytes(plistlib.dumps(info))
 PY
+if [[ -n "$diagnosticsEndpoint" ]]; then
+    plutil -insert LTDiagnosticsUploadURL -string "$diagnosticsEndpoint" "$app/Contents/Info.plist"
+fi
 plutil -lint "$app/Contents/Info.plist"
 python3 scripts/check-source-boundary.py --app "$app"
 codesign --force --sign - "$app"

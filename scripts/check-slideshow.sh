@@ -12,6 +12,7 @@ xcrun swiftc "${EDR_SWIFT_FLAGS[@]}" -swift-version 5 -parse-as-library -module-
   "$PACKAGE_ROOT/Sources/LightTableCore/AlbumPage.swift" \
   "$PACKAGE_ROOT/Sources/LightTableCore/LightResponse.swift" \
   "$PACKAGE_ROOT/Sources/LightTableCore/StartupPresentationProgress.swift" \
+  "$PACKAGE_ROOT/Sources/LightTableCore/DiagnosticReport.swift" \
   -emit-module-path "$CHECKS_DIR/LightTableCore.swiftmodule" -o "$CHECKS_DIR/libLightTableCore.dylib"
 sources=()
 for source in "$PACKAGE_ROOT"/Sources/LightTableApp/*.swift; do
