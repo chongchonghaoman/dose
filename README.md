@@ -1,144 +1,126 @@
-# 观片台 · LightTable
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/dose-wordmark-light.svg">
+    <img src="assets/brand/dose-wordmark-dark.svg" width="180" alt="dose">
+  </picture>
+</p>
 
-<img src="Assets/AppIcon.png" alt="观片台透光胶片图标" width="128">
+<h1 align="center">那些日子，慢慢显影。</h1>
 
-一款本地运行的 macOS 观片应用，模拟反转片灯箱与幻灯机。导入照片，自由摆片、开灯、用放大镜观察，或进入黑底全屏幻灯模式。
+<p align="center">一个让你愿意重新打开照片的 Windows 工作台。</p>
 
-A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
+<p align="center">
+  <a href="https://github.com/chongchonghaoman/dose/releases/latest">下载 Windows 版</a> ·
+  <a href="#从一张照片到一组作品">功能</a> ·
+  <a href="docs/BUILD.md">本地开发</a> ·
+  <a href="README.en.md">English</a>
+</p>
 
-v0.1.115 改进诊断采样的帧统计和重复事件处理，操作步骤沿用 [v0.1.114 指引](docs/本次更新操作指引-v0.1.114.md)。可通过应用内「检查更新…」获取。
+![dose 照片工作台：把照片摊开，挑出想留下的那一组](docs/media/hero.png)
 
-## 下载与运行
+照片越拍越多，回看的时间却越来越少。
 
-- 系统要求：**macOS 14 或更新版本**。
-- 预编译安装包面向 **Apple Silicon（M 系列芯片，arm64）**；Intel Mac 暂无预编译包，也未验证运行。
-- 安装包可在 [GitHub Releases](https://github.com/fuyuan9972-svg/LightTable/releases/latest) 下载。解压后打开「观片台.app」，也可自行拖入「应用程序」。
-- **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
-- 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
+**dose 把整理、选片、调色和分享放在一张桌面上。** 把照片摊开，放大看看细节；用同一张照片比较胶片风格；需要更细致的显影时，再进入暗房。最后，让散落在文件夹里的照片，变成一组愿意再次翻看的作品。
 
-当前版本 **[v0.1.115](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.115)**：诊断采样帧统计与重复事件处理优化。
+本地处理 · 保留原片 · 无需账户
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.115/LightTable-v0.1.115-macOS-arm64.zip)**
+## 从一张照片，到一组作品
 
-从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
+### 摊开，才看得见照片之间的关系
 
-重启先准备台面高清预览，再进入观片；空台面直接进入，读取失败可重试。整理全局快捷键为 **⇧Z**。底栏删除及取片收回的用法见[操作指引](docs/本次更新操作指引-v0.1.74.md)。
+自由摆放、网格、胶片袋和杂志排版，让选片有了空间。搜索文件名，筛选已放置或未放置的照片，按名称或导入顺序查看。选中一张进入大图，返回时，桌面还在原来的位置。
 
-## 应用内更新
+![dose 观片台](docs/media/light-table.png)
 
-- 每次完整退出后重新启动，台面准备完成就检查GitHub正式版本一次，不受上次检查时间或周期检查开关影响；同一次运行中开启多个窗口不会重复检查。无新版或启动检查断网时不弹窗，不上传照片或布局。
-- 有新版时提示版本与更新内容；点击下载后，在App内选择「安装并重启」。安装前验证更新包与更新信息的签名，重启前保存布局。
-- 曾跳过的版本，下次启动也会重新提示。菜单栏「观片台 → 检查更新…」可随时手动检查；「运行期间自动检查更新」只控制持续运行时每24小时的周期检查。
-- 下载或网络错误可重试，不修改现有应用；更新包由GitHub Releases提供。
-- v0.1.70起提供签名更新源。发行维护说明见 [发布步骤](docs/RELEASING.md)。
+### 风格，用自己的照片来选
 
-## 本版更新说明
+LUT 列表直接显示当前照片的效果。先看，再选，再调整强度；喜欢的风格可以收藏。曝光、对比度、冷暖与质感留在手边，也可以导入自己的 `.cube` 或 HaldCLUT。
 
-首次打开v0.1.115时继续显示诊断采样的三步操作指引，需走完才进入观片；中途退出下次启动会再次出现。走完后可在菜单「帮助 → 本次更新…」重看。操作步骤见[指引](docs/本次更新操作指引-v0.1.114.md)，其他旧版操作指南保留在文档中。
+按住空格看原图，松开继续。基础调节只走 LUT 模式，入口保持简单。
 
-## 诊断采样
+![同一张照片的 LUT 实时缩略图与收藏](docs/media/lut-gallery.png)
 
-菜单「观片台 → 开始诊断采样…」录制最长15分钟的状态与帧耗时汇总，确认后上传到维护者的私有存储，30天后删除；不含照片、截图、路径、坐标或电脑名。上传后请把显示的诊断编号发给维护者。接收函数源码见 [Cloud/diagnostics](Cloud/diagnostics/README.md)。
+### 想慢慢调，再进显影室
 
-## 功能
+**Windows 版已内置 SpektraLab 显影工作区。** 从 dose 打开照片，选择胶片与相纸，调整显影前后参数、曲线、颗粒和片边；保存后，结果回到 dose，继续整理与排版。
 
-- 导入照片或文件夹，包含子文件夹，追加到当前底栏；➕新建底栏，点击标签切换。
-- 从底栏拖片到台面后底栏隐藏该片；自由移动、旋转、缩放，Delete收回原底栏、原顺序。
-- 右键底栏照片选择「多选」，点击照片或文件名增减选择，点击「删除所选」或按 Delete 批量删除；取消或 Esc 退出。
-- 点选底栏照片或文件名后按 Delete，删除单张；右键底栏标签 →「删除底栏」移除整栏。两者均移除台面对应散片，其他底栏、独立相册和磁盘原图保留。
-- 「一键平铺」将当前底栏的照片重新摆放到台面；**会清空当前散片布局并重新排列**。
-- 开关灯与亮度调整，带短暂过曝回落效果。
-- 背光 EDR：启动默认关闭，点击顶部按钮或按 E 开启；默认亮度120%，可用滑块在10%–160%之间调整。双击恢复当前模式默认值，普通模式与EDR分别保留本次运行的亮度。
-- 普通放大镜1.5×；按住空格凑近，可选随窗口适配的原倍率或固定8×，松开退回。
-- 胶片袋式相册页与整页摆放。
-- 全屏幻灯：黑色背景、居中单张照片、随机播放顺序和机械换片动画；自动启用EDR并使用设定的EDR亮度，返回保留台面原状态。幻灯模式不显示放大镜。
-- 「回到过去」：从底栏拖入原始照片，本机生成高斯场景，黑场逐粒显现；左键旋转、右键平移、滚轮／捏合缩放，双击复位。
-- 首次使用「回到过去」联网下载环境与模型，之后复用；无16 GB硬门槛，8 GB设备尚未实测。SHARP模型仅限非商业科学研究，禁止产品开发或商业产品／服务用途，详见第三方许可说明。
-- 布局和预览缓存保存在本机；不修改照片原文件。
-- 幻灯片加载保持静音，首张入场保留原有声音，后续换片采用较轻的机械按键声，播放音量为15%。
+显影结果作为独立的 16-bit ProPhoto RGB TIFF 保存，保留原片与编辑记录。再次编辑会找到对应原片，避免把已显影的结果重复显影。
 
-## 使用
+![dose 内置的 SpektraLab 显影工作区](docs/media/darkroom.png)
 
-1. 点击「从文件夹导入」或「添加照片」，也可以把照片、文件夹拖入当前底栏；点击➕新建底栏。
-2. 将照片拖到台面，或点击「一键平铺」放置全部照片。
-3. 开灯观看，通过亮度滑杆调整灯箱；选中台面照片后可旋转、缩放，按 Delete 或右键「收回底栏」放回原栏。点选底栏照片按 Delete 删除单张；右键底栏标签 →「删除底栏」删除整栏。仅切换标签或刚导入后按 Delete 不会删除整栏。
-4. 切换到放大镜，其右侧会出现「原倍率 / 8×」胶囊；点击、拖动或按Tab切换倍率，用鼠标移动取景，按住空格凑近观察。凑近时也可按Tab切换；切回普通指针时隐藏倍率控件。
-5. 点击幻灯片按钮进入全屏；按 **↓ / →** 看下一张，按 **↑ / ←** 返回上一张。
-6. 点击「返回观片台」或按 **Esc** 退出幻灯，回到原来的台面。
-7. 点击「回到过去」，从底栏拖照片进入播放区，等待下载（首次使用）、推理和场景加载。播放时可小幅移动视角，按 **Esc** 返回。详见[操作说明](docs/releases/v0.1.87.md)。
+### 留下照片，也留下这一组的样子
 
-收回照片、删除底栏照片和删除整栏都不会删除磁盘原图。照片仍从原路径读取，请保留导入文件的位置。
+在观片台里整理成组，使用幻灯机回看；将排版导出为分享图或九宫格。照片与照片之间的顺序、留白和节奏，也是作品的一部分。
 
-| 快捷键 | 操作 |
-| --- | --- |
-| ⌘O | 从文件夹追加导入当前底栏 |
-| ⇧⌘O | 添加照片 |
-| ⌘L | 开灯 / 关灯 |
-| A / V | 普通指针 / 放大镜 |
-| Tab | 放大镜模式下切换原倍率 / 8× |
-| 按住空格 | 凑近观察；松开退回 |
-| E | 开关背光 EDR；按住空格凑近时也可使用 |
-| ⇧Z | 整理台面并回到全局 |
-| ⌘点选 / Shift拖动 | 多选 / 框选台面照片 |
-| Delete | 台面选中照片：收回原栏；底栏选中照片：删除该张及台面对应散片 |
-| ↓ / →、↑ / ← | 幻灯模式下下一张、上一张 |
-| Esc | 退出幻灯模式 |
+## 开始使用
 
-## 从源码构建
+1. 打开 **[Releases → 最新版本](https://github.com/chongchonghaoman/dose/releases/latest)**。
+2. 下载 `dose-0.28.0-Windows-x64.zip`。
+3. **完整解压**，双击其中的 `dose.exe`。导入照片后即可使用。
 
-需要 macOS 14+、Swift 5.9 或更新版本，以及 Apple Command Line Tools。也可以使用完整 Xcode 提供的工具链。
+这是便携版，无需安装。不要只把 `dose.exe` 单独移出文件夹；运行依赖同目录中的资源。GitHub 自动生成的 `Source code` 是源码下载，普通使用请选择上面的 Windows ZIP。
 
-```sh
-xcode-select --install
-git clone https://github.com/fuyuan9972-svg/LightTable.git
-cd LightTable
-swift build
-zsh scripts/build-app.sh
+**环境：** Windows 10/11 x64；内置显影引擎需要支持 Vulkan 的显卡与驱动。当前版本未做代码签名。遇到 Windows 提示时，请先核对下载来源与 Release 中的 SHA-256，不需要关闭系统防护。
+
+常用操作：<kbd>E</kbd> 打开／收起单张照片视图，<kbd>F</kbd> 适应窗口，<kbd>←</kbd> <kbd>→</kbd> 切换照片，按住 <kbd>Space</kbd> 对比原图，<kbd>Ctrl</kbd> + <kbd>F</kbd> 搜索图库。
+
+## 照片留在你的电脑上
+
+- 照片处理在本地完成，不上传照片，不需要登录。
+- 编辑结果另存，原始文件保留。图库和排版记录会引用本地原片；**项目记录不能代替原片备份**。
+- 配置保存在 `%APPDATA%/lighttable-windows`，这是沿用的兼容目录名。
+- LUT 调整后的常规导出为带 sRGB ICC 的 JPEG / PNG；原生显影保留 16-bit TIFF。两条导出路径的用途和精度不同。
+
+当前已验证 JPEG、PNG、HEIC 与部分 DNG 工作流。不同相机 RAW、显卡和大图库的表现仍需要更多实测；发现问题欢迎附上环境和复现步骤。
+
+## 本地开发
+
+需要 Windows x64 和 Node.js 22.12+ / npm。应用代码在 `src/`，显影前端在 `vendor/spektralab/desktop/`。
+
+```powershell
+git clone https://github.com/chongchonghaoman/dose.git
+cd dose
+npm ci
+npm run prepare:runtime
+npm start
 ```
 
-已有 Command Line Tools 时跳过第一条命令。构建结果是 `dist/观片台.app`；脚本会执行 Release 构建、生成应用包并进行 ad-hoc 本地签名，不会自动安装或运行应用。
+`prepare:runtime` 下载并校验固定版本的 Release，提取原生引擎与显影前端。修改显影前端后再运行：
 
-历史构建入口 `build_release.sh` 转发到同一个构建脚本。可通过参数指定输出路径：
-
-```sh
-zsh scripts/build-app.sh "dist/custom/观片台.app"
+```powershell
+npm ci --prefix vendor/spektralab/desktop
+npm run build:editor
+npm test
+npm run test:preferences
+npm run package
 ```
 
-项目使用 SwiftUI、AppKit、Core Image 和 Metal；SwiftPM固定依赖Sparkle 2.10.0用于更新，首次构建需下载依赖。源码可自行编译；目前不声明 Intel 构建或运行已经验证。
+输出在 `build-output/dose-win32-x64/`。**完整原生对应源码**、依赖来源与从源码重建引擎的方法见 [构建说明](docs/BUILD.md)；Release 同时提供 `dose-0.28.0-source.zip`。工具链需自行安装，源码包不是离线工具链。
 
-## 检查
+## dose 做了什么
 
-以下独立检查直接编译生产源码，不需要 XCTest：
+dose 围绕一条完整的照片工作流设计：**观片台 → 单张查看 → 风格比较 → 显影 → 成组分享**。
 
-```sh
-bash scripts/check.sh
-bash scripts/check-drops.sh
-bash scripts/check-loupe.sh
-bash scripts/check-sleeves.sh
-bash scripts/check-closeup.sh
-bash scripts/check-albums.sh
-bash scripts/check-slideshow.sh
-bash scripts/check-updates.sh
-bash scripts/check-feature-guide.sh
-bash scripts/check-trays.sh
-bash scripts/check-tray-return.sh
-```
+本项目实现与持续维护的部分包括照片工作台、单张查看状态、当前照片 LUT 预览与收藏、图库筛选、排版与九宫格分享，以及显影工作区的打开、保存、返回和原片追踪。界面遵循一个简单原则：少一些重复标签，让照片和布局说明怎么用。
 
-它们覆盖布局、拖放、灯光、镜片、相册与幻灯状态等逻辑。图形相关检查需要能够使用 macOS 图形框架的环境；检查通过不等于所有设备上的动画流畅度已经实测。
+胶片与相纸的物理模拟建立在 SpektraLab 的工作之上。我们保留它的材料模型与来源，专注于把照片前后两端的使用体验做好。
 
-安装完整 Xcode 并选用其工具链后，还可以运行 SwiftPM 测试：
+## 来源与许可
 
-```sh
-swift test
-```
+感谢让这份工作成为可能的开源作者：
 
-## 反馈与许可
+| 项目 | 在 dose 中的作用 | 许可／来源 |
+| --- | --- | --- |
+| [LightTable](https://github.com/fuyuan9972-svg/LightTable) | 观片台的上游项目；本仓库以 fork 保留历史 | MIT，保留[原始声明](licenses/LightTable-MIT.txt) |
+| [SpektraLab](https://github.com/JamesQiu2005/SpektraLab) | 胶片、相纸与显影引擎 | GPL-3.0-or-later，原始许可随包提供 |
+| [SpektraLab Windows 社区版](https://github.com/LUOJW5566/SpektraLab) | 内置显影前端与参考原生运行时 | GPL-3.0-or-later，见[来源记录](vendor/spektralab/README.md) |
+| [Pat David / HaldCLUT](https://github.com/NatronGitHub/clut) | 内置的六款胶片风格 LUT | CC BY-SA 4.0，见 [LUT 声明](assets/luts/NOTICE.md) |
 
-通过 [Issues](https://github.com/fuyuan9972-svg/LightTable/issues) 报告问题，请附 macOS 版本、芯片型号和复现步骤。提交截图或录屏前，请移除不希望公开的照片及个人信息。
+dose 的集成发行版使用 **[GPL-3.0-or-later](LICENSE)**；第三方代码、字体、色彩数据和素材保留各自许可。dose 是独立项目，不代表上述作者的官方发布或背书。完整信息见 [第三方声明](THIRD_PARTY_NOTICES.md) 与 [HEIC 说明](HEIC-NOTICES.md)。演示截图中的测试照片来自 [Lorem Picsum](https://picsum.photos)，摄影版权归原作者，未作为内置照片分发。
 
-开源基础代码采用 [MIT 许可证](LICENSE)。EDR二进制组件不在MIT授权范围，遵循 [EDR组件许可](Binaries/EDR-LICENSE.txt)；实现源码不随仓库发布。Sparkle、SHARP、PlayCanvas、OOOSplat及第三方音频遵循各自许可，不纳入本项目的MIT授权；依赖与素材说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。
+## 一起把它做好
 
+欢迎提交 [Issue](https://github.com/chongchonghaoman/dose/issues) 或 Pull Request。报告问题时请写明 dose 版本、Windows 版本、显卡与复现步骤；涉及照片时，优先提供可公开的小样，保留自己的隐私。
 
-## EDR 组件与构建
+如果 dose 让你重新打开了一组很久没看的照片，欢迎点一个 Star，让更多人找到它。
 
-源码构建使用随仓库提供的二进制组件，无需私有源码。发布边界与维护流程见 [分发说明](docs/DISTRIBUTION.md)。

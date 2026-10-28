@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.cube -text
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
+*.bin binary

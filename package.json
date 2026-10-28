@@ -1,0 +1,37 @@
+{
+  "name": "dose",
+  "version": "0.28.0",
+  "description": "dose — 本地照片工作台：整理、比较、显影与分享",
+  "main": "src/main.cjs",
+  "author": "dose contributors",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/core.test.cjs tests/film.test.cjs tests/texture.test.cjs tests/library.test.cjs tests/dng.test.cjs tests/editorial-layout.test.cjs tests/editorial-grid.test.cjs tests/moments-layout.test.cjs tests/frame.test.cjs tests/auto-fit.test.cjs tests/viewport-layout.test.cjs tests/page-reflow.test.cjs tests/photo-availability.test.cjs tests/share-layout.test.cjs tests/share-geometry.test.cjs tests/grid-export.test.cjs tests/natural.test.cjs tests/editorial-rhythm.test.cjs",
+    "test:desktop": "node tests/desktop.cjs",
+    "test:preferences": "node --test tests/ui-preferences.test.cjs",
+    "test:photo-workflow": "node tests/photo-workflow-desktop.cjs",
+    "package": "node scripts/package.cjs",
+    "prepare:runtime": "powershell -ExecutionPolicy Bypass -File scripts/prepare-runtime.ps1",
+    "build:editor": "node scripts/build-editor.cjs",
+    "test:fixtures": "node scripts/fetch-fixtures.cjs"
+  },
+  "dependencies": {
+    "heic-decode": "2.1.0",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "45.0.0",
+    "playwright": "1.64.1"
+  },
+  "productName": "dose",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chongchonghaoman/dose.git"
+  },
+  "homepage": "https://github.com/chongchonghaoman/dose#readme",
+  "bugs": {
+    "url": "https://github.com/chongchonghaoman/dose/issues"
+  }
+}

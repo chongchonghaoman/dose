@@ -1,0 +1,12 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');
+const {parseCube,sampleCube,applyPixels,cleanAdjustments}=require('../src/film.cjs');
+const path=require('node:path');const {cleanState}=require('../src/core.cjs');
+const identity='LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1';
+test('identity LUT interpolates asymmetric RGB coordinates without swapping channels',()=>{const c=parseCube(identity);const actual=sampleCube(c,.17,.63,.91,[]);actual.forEach((v,k)=>assert(Math.abs(v-[.17,.63,.91][k])<1e-6));});
+test('invalid, oversized, incomplete and non-finite cube data are rejected',()=>{for(const s of ['LUT_3D_SIZE 2\n0 0 0','LUT_3D_SIZE 100','LUT_1D_SIZE 16',identity.replace('1 1 1','NaN 1 1')])assert.throws(()=>parseCube(s));});
+test('zero adjustments and identity LUT preserve pixel values and alpha',()=>{const a=Buffer.from([0,15,80,128,255,127,10,200]);assert.deepEqual(applyPixels(Buffer.from(a),4,{}),a);assert.deepEqual(applyPixels(Buffer.from(a),4,{lut:true},parseCube(identity)),a);});
+test('exposure is linear light: +1 EV maps sRGB 128 near 176',()=>{const a=Buffer.from([128,128,128]);applyPixels(a,3,{exposure:1});assert(Math.abs(a[0]-176)<=1);assert.equal(a[0],a[1]);});
+test('highlight and shadow adjustments target different tonal ranges',()=>{const src=Buffer.from([35,35,35,210,210,210]);const hi=applyPixels(Buffer.from(src),3,{highlights:-80});const sh=applyPixels(Buffer.from(src),3,{shadows:80});assert(src[3]-hi[3]>src[0]-hi[0]+20);assert(sh[0]>src[0]);assert.equal(sh[3],src[3]);});
+test('saturation -100 produces neutral pixels, temperature changes channel balance',()=>{const a=applyPixels(Buffer.from([170,90,30]),3,{saturation:-100});assert.equal(a[0],a[1]);assert.equal(a[1],a[2]);const warm=applyPixels(Buffer.from([128,128,128]),3,{temperature:80});assert(warm[0]>warm[1]&&warm[1]>warm[2]);});
+test('contrast stretches either side of mid gray',()=>{const a=applyPixels(Buffer.from([50,50,50,200,200,200]),3,{contrast:50});assert(a[0]<50&&a[3]>200);});
+test('per-photo adjustments survive sanitization with bounded controls',()=>{const s=cleanState({photos:[{id:'a',path:path.resolve('a.jpg'),adjustments:{lut:true,exposure:30,shadows:99,contrast:NaN}}]});assert.equal(s.photos[0].adjustments.exposure,2);assert.equal(s.photos[0].adjustments.shadows,99);assert.equal(s.photos[0].adjustments.lut,true);assert.equal(s.photos[0].adjustments.contrast,0);assert.equal(cleanAdjustments(null).strength,100);});

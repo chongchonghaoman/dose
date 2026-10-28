@@ -1,56 +1,49 @@
-# 依赖、素材与体验来源
+# Third-party notices
 
-## 系统框架
+## LightTable upstream
 
-本应用使用 macOS 提供的 SwiftUI、AppKit、Core Image、Core Graphics、Metal、ImageIO 等系统框架。它们由系统或 Apple 开发工具提供，不作为本仓库的第三方源码打包。
+Project: https://github.com/fuyuan9972-svg/LightTable
 
-## Sparkle 更新组件
+Reference commit: 1a998cfce9096ac7b42e26aba67c922885fd43e2.
 
-应用内更新使用 Sparkle 2.10.0，来自 https://github.com/sparkle-project/Sparkle 。
-SwiftPM 固定此版本并校验其二进制包摘要。应用中包含 Sparkle.framework 及原有更新辅助程序。
-Sparkle 及其内含组件遵循其各自许可，完整许可随应用保存在 `Contents/Resources/Sparkle-LICENSE.txt`。
+Original MIT copyright and permission notice is preserved in licenses/LightTable-MIT.txt and in the native runtime. The dose brand replaces the original icon. This is an independent photo-workflow project, not an official upstream release. The integrated dose distribution is GPL-3.0-or-later; see LICENSE. The GitHub fork preserves LightTable ancestry; its historical macOS tree is not part of the dose Windows runtime.
 
-## SHARP 单图场景生成
+## SpektraLab native Windows engine
 
-来源：https://github.com/apple/ml-sharp ，源码提交 `aed6527499ef91cba3b54c18d49a870f25947190`。随附 `src/sharp` 的 `utils/vis.py` 改为按需读取色图，避免照片读取时触发系统字体扫描；其余上游源码保持不变，应用另行提供推理适配代码。修改日期与详情见 `PROVENANCE.txt`。
+https://github.com/JamesQiu2005/SpektraLab at 99c2d5c9883be485085895157279cc7c4eaa8db6. GPL-3.0-or-later. The legacy native host, resources, licenses and material-data attribution are in resources/spectral in the Windows distribution (native/spectral after runtime preparation in a development checkout). The source archive includes the modified engine under SpektraLab-port, LibRaw and Vulkan-Headers dependency sources, and build instructions. These compiled runtime directories are intentionally not tracked in Git.
 
-源码许可、模型许可、致谢和来源记录分别位于 `Sources/LightTableApp/Resources/ReturnToPast/sharp-source/` 下的 `LICENSE`、`LICENSE_MODEL`、`ACKNOWLEDGEMENTS` 与 `PROVENANCE.txt`，同时随应用打包在 `Contents/Resources/ReturnToPast/sharp-source/`。
+## Community Windows implementation
 
-SHARP 模型权重不随仓库或安装包分发，首次使用时从 Apple 提供的地址下载。**模型仅限非商业科学研究，其许可明确排除产品开发或商业产品／服务用途。** 按需下载、本机处理或免费提供应用不改变模型的使用限制；源码许可与模型许可应分别遵守。
+Selected native contrast-mask, film-edge/date rasterisation and Vulkan kernels
+are adapted from https://github.com/LUOJW5566/SpektraLab at
+c14effc0dc665be8712cca433f0a56cf5a506547 (GPL-3.0-or-later).
+The legacy engine preserves historical grade and PNG16 host paths for existing recipes. New basic adjustments use LUT mode only.
+The embedded TeX Gyre Heros faces used for film-edge lettering are under the
+GUST Font License; their notices are included under resources/spectral/licenses in the Windows distribution and in the corresponding source archive.
+This integration is not an endorsement by either upstream author.
 
-## PlayCanvas 与 OOOSplat 场景预览
+The full community editor frontend is also embedded, with the dose Electron transport, launch/return hooks and clearer negative/positive direct-output labels. See vendor/spektralab/README.md. Its reference native host is reused unchanged from v1.3.1-windows.1. Its matching source, dependency sources, original component/data licenses, build records and the recorded license-text provenance limitation are included in upstream-release-source/ inside dose-0.28.0-source.zip. The legacy engine and reference host remain separate source/data distributions. Full native corresponding source is available from the same GitHub Release as the binary; see docs/BUILD.md.
 
-- PlayCanvas 2.21.4：https://github.com/playcanvas/engine ，MIT 许可。
-- OOOSplat：https://github.com/ooolabdev/ooosplat ，提交 `65193513fde9e5cb2bf5bd9b906c7221f834b077`，Apache License 2.0。预览控制及后端相关衍生代码用于离线资源加载、应用生命周期、视角限制与输入降速等适配。
+## Runtime libraries
 
-许可全文与修改声明在 `Sources/LightTableApp/Resources/ReturnToPast/viewer-licenses.txt`，随应用保存在 `Contents/Resources/ReturnToPast/viewer-licenses.txt`。以上组件及 SHARP 不纳入本项目原创代码的 MIT 授权。
+- Electron 45.0.0 — MIT; Chromium and its bundled components retain their own licenses. The portable distribution includes LICENSE and LICENSES.chromium.html from Electron.
+- Sharp 0.35.5 — Apache-2.0; packaged native libvips and codec dependencies have their own notices in the bundled npm packages.
+- Electron Packager and Playwright are development / verification dependencies, not shipped in the runtime app.
+- The dose UI uses Windows system fonts. The native film-edge engine embeds TeX Gyre Heros as described above.
 
-## 体验参考
+## User-supplied color tables
 
-观片台与幻灯机的体验参考实体灯箱、胶片袋及幻灯机，也受到 [SpektraLab 观片台](https://spektralab.app/zh/lighttable/) 的启发。
+Six bundled Pat David film emulations are CC BY-SA 4.0, with their own attribution and share-alike terms. Source: https://github.com/NatronGitHub/clut at commit af7b50d4caf6244fb6895a647f5b6a84efe7931a. Original PNGs, converted 33³ cube files, attribution, upstream README and modification notice are in assets/luts. License: https://creativecommons.org/licenses/by-sa/4.0/. Film names describe approximations only; no trademark endorsement is implied.
 
-本应用是独立的 SwiftUI / AppKit 实现。本发行版不打包 SpektraLab 的应用或引擎源码、官网素材、胶片配置、LUT 或品牌标识，与 SpektraLab 没有官方隶属或背书关系。参考来源说明不改变相应原项目和素材的许可。
+Optional locally generated spektrafilm 0.3.4 color tables originate from Andrea Volpato's project, commit 3bb2c2d2801ff68b92019cf1dbcbb133d60832bc. Those local tables and their SPEKTRAFILM_LICENSE.txt/PROVENANCE are installed separately; that optional Python package and those local LUTs are not bundled (the native SpektraLab engine described above is bundled). Dehancer, RNI and DxO are external commercial products, not embedded engines. LUT-mode grain/halation/bloom is independently implemented by LightTable; spectral mode uses the native SpektraLab effects.
 
-## 音频与照片
+The application implements an original generic 3D .cube reader and trilinear sampler. No Gloam binary, code, or LUT is bundled. The Gloam public showcase YINGZEJUN 5207 LUT retains its author's rights; public availability is not a redistribution license. A locally imported file remains in the user's application data, separate from distributable builds. It is a 16³ web showcase, not a verified reconstruction of the iOS app.
 
-v0.1.65 曾为静音版。v0.1.69 根据项目维护者的明确要求恢复「快门咔嚓」，创作者为 **酸菜鱼**，素材 ID `7046771589660036366`，由维护者通过剪映提供。
+## Audio
 
-v0.1.107 另包含维护者通过剪映提供的两份素材：
+The upstream ShutterClick.wav, ShutterClickRoom.wav and ShutterArrivalRoom.wav are NOT included. Their original rights were not granted by the upstream MIT license. This port generates its own short mechanical effects procedurally with Web Audio; no third-party audio samples are used.
 
-- 「复古胶片机按键声」，素材 ID `7079262499366833421`，裁剪为约0.552秒的 `SlideChange.wav`，用于幻灯片换片。
-- 「放映机放映」，素材 ID `7278467024668462394`，截取开头约3秒为 `ProjectorStart.wav`。该资源保留在包内，当前加载阶段保持静音，不播放此素材。
+## Test photographs
 
-上述两份素材的作者尚未确认，不在此作作者归属声明。
+Development-only fixtures were obtained from Lorem Picsum (https://picsum.photos, image IDs 1018, 1015, 1016, 1039, 1043, 1040). They are not included as demo photos in the application or source archive. Delivered verification screenshots may show these test photos and are evidence of the running UI, not original photographic work by this project. User-imported images remain owned by their respective rights holders.
 
-本项目并非这些录音的作者。原录音及裁剪、轻房间反射的派生文件**不适用本仓库代码的 MIT 许可**，其权利归原权利人，适用原素材授权；本项目不额外授予这些音频的独立再分发许可。来源与处理见 [音效说明](docs/audio/快门咔嚓.md)。运行应用不依赖剪映或其缓存。
-
-仓库不附带个人照片、调试截图或录屏；运行时由使用者导入自己的照片。项目的 MIT 许可证不为用户导入的照片或另行添加的第三方素材授予权利。
-
-## 项目代码
-
-本仓库开源基础代码及随附文档使用根目录 [LICENSE](LICENSE) 中的 MIT 许可证；上述第三方组件、模型与音频除外。
-
-
-## 第一方 EDR 专有组件
-
-Binaries/LightTableEDR.xcframework（含公开调用头文件）是第一方专有二进制，按Binaries/EDR-LICENSE.txt授权，不纳入根目录MIT许可。安装包保留该许可。其余组件仍分别适用上述许可。

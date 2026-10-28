@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict'),A=require('../src/auto-fit.js'),Film=require('../src/film.cjs'),{layer2Grade}=require('../src/spectral-client.cjs');
+const grey=values=>Uint8Array.from(values.flatMap(v=>[v,v,v,255])),dec=v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4,enc=v=>v<=.0031308?v*12.92:1.055*v**(1/2.4)-.055;
+const darkOriginal=grey([16,24,36,48,72,100,130]),metered=grey([36,48,72,100,150,200,230]);
+assert.equal(A.derive(darkOriginal,metered).ev,0,'Never undo the film input meter by pulling a bright result down to a dark original');
+const src=grey([60,90,120,150,180,210,235]),dim=grey([20,40,60,80,100,135,170]),fit=A.derive(src,dim);
+assert(fit.ev>0&&fit.ev<=.75);assert.equal(fit.saturation,1);
+const corrected=Uint8Array.from([...dim].map((v,i)=>i%4===3?255:Math.round(enc(A.correctLinear(...[v,v,v].map(x=>dec(x/255)),fit.ev,1)[0])*255)));
+assert(A.safeBrightness(A.measure(dim),A.measure(corrected)));assert(A.measure(corrected).p50>A.measure(dim).p50);
+assert.equal(A.derive(grey([5,8,12,18,24,30]),grey([2,4,6,12,16,22])).ev,0,'Preserve deliberate night/low-key scenes');
+const red=Uint8Array.from([25,5,5,255,45,8,8,255,90,15,15,255,150,25,25,255]);assert.equal(A.derive(grey([80,120,180,220]),red).saturation,1,'Brightness assistance must not silently desaturate the film');
+assert(!A.safeBrightness(A.measure(grey([20,60,100,140,180,220])),A.measure(grey([180,182,184,186,188,190]))),'A brighter but flat result must be rejected');
+for(const p of [[0,0,0],[1,1,1],[1,0,0]])assert(A.correctLinear(...p,.75,1).every(v=>Number.isFinite(v)&&v>=0&&v<=1));
+const old={autoFitMode:'natural',autoFitEV:-1.25,autoFitSaturation:.45,autoFitKey:'old',exposure:.7,contrast:18,saturation:12},clean=Film.cleanAdjustments(old);assert.equal(clean.autoFitMode,'off');assert.equal(clean.autoFitEV,0);assert.equal(clean.autoFitSaturation,1);assert.equal(clean.autoFitKey,'');for(const k of ['exposure','contrast','saturation'])assert.equal(clean[k],old[k]);assert.equal(layer2Grade(old).auto_fit_active,false);
+const current=Film.cleanAdjustments({...old,autoFitVersion:2,autoFitEV:-2});assert.equal(current.autoFitEV,0);assert.equal(current.autoFitSaturation,1);assert.equal(Film.spectralDefaults().autoFitMode,'off');
+console.log('Brightness safety: metered images, night intent, tonal separation, no desaturation, legacy reset and manual preservation passed');

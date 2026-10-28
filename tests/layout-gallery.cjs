@@ -1,0 +1,8 @@
+// Handoff gallery made from real packaged-app screenshots, not mockups.
+const fs=require('node:fs/promises'),path=require('node:path'),sharp=require('sharp');
+const version=require('../package.json').version,out=path.resolve(__dirname,'../../../outputs/v'+version),proof=path.join(out,'verification');
+(async()=>{const report=JSON.parse(await fs.readFile(path.join(proof,'adaptive-layout-report.json'),'utf8')),names={portrait:'竖幅引导',stagger:'错落分组',panorama:'宽幅引导',islands:'分散组团',columns:'错位分栏',diagonal:'对角阅读'},w=420,h=594,gap=22,label=40,top=94,pad=30,width=pad*2+w*3+gap*2,height=top+(h+label)*2+gap+pad,panels=[],texts=[];
+for(let i=0;i<6;i++){const x=pad+(i%3)*(w+gap),y=top+Math.floor(i/3)*(h+label+gap),input=await sharp(path.join(proof,'variation-'+String(i+1).padStart(2,'0')+'-paper.png')).resize(w,h,{fit:'contain',background:'#e8e6e3'}).png().toBuffer();panels.push({input,left:x,top:y});texts.push(`<text x="${x}" y="${y+h+27}" font-size="17">${String(i+1).padStart(2,'0')} · ${names[report.compositions[i]]||report.compositions[i]}</text>`);}
+const labels=Buffer.from(`<svg width="${width}" height="${height}"><g fill="#ede9dd" font-family="Segoe UI,Microsoft YaHei"><text x="30" y="40" font-size="26">同一组照片，六种构图</text><text x="30" y="67" font-size="14" fill="#a4ac9e">dose ${version} · 实机截图 · 相同素材与调色参数</text>${texts.join('')}</g></svg>`);await sharp({create:{width,height,channels:3,background:'#171a17'}}).composite([...panels,{input:labels}]).png().toFile(path.join(out,'同组照片六种构图.png'));
+await fs.copyFile(path.join(proof,'viewport-wide.png'),path.join(out,'适应窗口实机.png'));
+console.log('Created same-photo six-composition gallery and actual viewport screenshot.');})().catch(e=>{console.error(e);process.exitCode=1;});

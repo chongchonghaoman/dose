@@ -1,15 +1,23 @@
-.DS_Store
-.build/
-.swiftpm/
-.work/
-builds/
+node_modules/
+native/
+build-output/
+.cache/
+.sources/
+outputs/
 dist/
-*.xcodeproj
-*.swp
-*~
-*.dSYM/
-debug-*
+target/
+test-results/
+playwright-report/
+tests/fixtures/
+tests/heic-fixtures/
+tests/dng-fixtures/
+tests/test-inputs/
+tests/results/
+*.log
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+__pycache__/
+*.pyc
 
-# Proprietary implementation must remain outside this repository.
-/Private/
-/docs/research/

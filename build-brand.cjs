@@ -1,0 +1,19 @@
+const fs=require('node:fs/promises'),path=require('node:path'),sharp=require('sharp');
+const root=__dirname,dir=path.join(root,'assets/brand');
+const d='M72 0H96V128H43C16 128 0 111 0 84V80C0 53 17 36 43 36H72ZM43 59C30 59 24 66 24 80V84C24 98 30 105 43 105H53C66 105 72 98 72 84V59Z';
+const o='M155 36C183 36 200 54 200 82C200 110 183 128 155 128C127 128 110 110 110 82C110 54 127 36 155 36ZM155 59C142 59 134 67 134 82C134 97 142 105 155 105C168 105 176 97 176 82C176 67 168 59 155 59Z';
+const s='M284 47C274 39 263 36 249 36C228 36 213 47 213 64C213 81 227 87 245 91L257 94C265 96 269 98 269 102C269 107 263 110 254 110C242 110 232 105 223 98L211 114C222 124 238 129 253 129C277 129 293 118 293 100C293 83 278 77 261 73L249 70C241 68 236 66 236 62C236 57 242 54 250 54C259 54 268 58 275 63Z';
+const e='M392 113C382 124 369 129 351 129C322 129 305 111 305 83C305 55 322 36 349 36C376 36 393 55 393 83V91H329C332 103 339 109 352 109C362 109 370 106 377 100ZM329 73H370C368 61 361 55 350 55C339 55 332 61 329 73Z';
+const paths=`<path fill-rule="evenodd" d="${d}"/><path fill-rule="evenodd" d="${o}"/><path d="${s}"/><path fill-rule="evenodd" d="${e}"/>`;
+const svg=(view,body)=>`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${view}">${body}</svg>`;
+async function build(){await fs.mkdir(dir,{recursive:true});
+for(const [name,color] of [['dark','#202320'],['light','#F3F1EB']]){
+await fs.writeFile(path.join(dir,`dose-wordmark-${name}.svg`),svg('0 0 393 130',`<g fill="${color}">${paths}</g>`));
+await fs.writeFile(path.join(dir,`dose-symbol-${name}.svg`),svg('0 0 96 128',`<path fill="${color}" fill-rule="evenodd" d="${d}"/>`));}
+const icon=svg('0 0 512 512',`<rect x="8" y="8" width="496" height="496" rx="112" fill="#F3F1EB"/><g transform="translate(136 96) scale(2.5)" fill="#202320"><path fill-rule="evenodd" d="${d}"/></g>`);
+await fs.writeFile(path.join(dir,'dose-icon.svg'),icon);await sharp(Buffer.from(icon)).resize(1024).png().toFile(path.join(root,'assets/icon.png'));
+const sizes=[16,24,32,48,64,128,256],buffers=[];for(const size of sizes){const b=await sharp(Buffer.from(icon)).resize(size).png().toBuffer();buffers.push(b);await fs.writeFile(path.join(dir,`dose-icon-${size}.png`),b)}
+const head=Buffer.alloc(6+16*sizes.length);head.writeUInt16LE(1,2);head.writeUInt16LE(sizes.length,4);let offset=head.length;buffers.forEach((b,i)=>{const p=6+i*16;head[p]=sizes[i]===256?0:sizes[i];head[p+1]=head[p];head.writeUInt16LE(1,p+4);head.writeUInt16LE(32,p+6);head.writeUInt32LE(b.length,p+8);head.writeUInt32LE(offset,p+12);offset+=b.length});await fs.writeFile(path.join(root,'assets/icon.ico'),Buffer.concat([head,...buffers]));
+const board=svg('0 0 1600 980',`<rect width="1600" height="980" fill="#F3F1EB"/><text x="76" y="76" fill="#202320" font-family="Segoe UI" font-size="19" letter-spacing="3">DOSE / MEMORY WINDOW</text><text x="1524" y="76" text-anchor="end" fill="#737771" font-family="Segoe UI" font-size="19">A dose of those days.</text><path d="M76 110H1524" stroke="#D3D4CD"/><g transform="translate(90 210) scale(1.8)" fill="#202320">${paths}</g><rect x="1020" y="180" width="360" height="360" rx="80" fill="#202320"/><g transform="translate(1128 260) scale(1.5)" fill="#F3F1EB"><path fill-rule="evenodd" d="${d}"/></g><text x="90" y="525" font-family="Microsoft YaHei" font-size="28" fill="#565C56">那些日子，慢慢显影。</text><g transform="translate(90 650)">${['#171918','#262925','#F3F1EB','#C4B28F'].map((c,i)=>`<rect x="${i*250}" width="220" height="120" rx="12" fill="${c}" stroke="#D3D4CD"/><text x="${i*250}" y="152" fill="#565C56" font-size="19" font-family="Consolas">${c}</text>`).join('')}</g><text x="90" y="905" font-family="Segoe UI" font-size="18" fill="#737771">Neutral photo canvas. Warm identity. One quiet accent.</text>`);
+await sharp(Buffer.from(board)).png().toFile(path.join(dir,'dose-identity.png'));
+}module.exports=build();module.exports.catch(e=>{console.error(e);process.exitCode=1});

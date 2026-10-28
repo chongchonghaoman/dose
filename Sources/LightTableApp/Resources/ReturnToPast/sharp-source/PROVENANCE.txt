@@ -1,6 +1,0 @@
-Upstream: https://github.com/apple/ml-sharp
-Commit: aed6527499ef91cba3b54c18d49a870f25947190
-Vendored src/sharp. Inference only; renderer is not imported.
-Modified 2026-10-28: sharp/utils/vis.py lazily uses matplotlib.colormaps instead
-of importing pyplot, avoiding unnecessary system font discovery during RGB IO.
-All other vendored source files remain unchanged from the upstream commit.

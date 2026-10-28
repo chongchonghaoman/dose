@@ -1,0 +1,62 @@
+[
+  {
+    "hash": "fcf68c2adcfc1160110a62dc926bdaa1a0cc779910308cfeaebfff5a9d648981",
+    "name": "Kodak Portra 400",
+    "source": "Pat David · G’MIC",
+    "license": "CC BY-SA 4.0",
+    "bundled": true,
+    "author": "Pat David",
+    "sourceUrl": "https://github.com/NatronGitHub/clut/blob/af7b50d4caf6244fb6895a647f5b6a84efe7931a/negative_new/kodak_portra_400.png",
+    "changes": "Converted 16-bit HaldCLUT to 33³ .cube with trilinear resampling; no creative grading changes."
+  },
+  {
+    "hash": "3fb626dacfadb9e58bf43fb5cab569aecf341ebfd53a81e4b34379bc59525b27",
+    "name": "Fuji 400H",
+    "source": "Pat David · G’MIC",
+    "license": "CC BY-SA 4.0",
+    "bundled": true,
+    "author": "Pat David",
+    "sourceUrl": "https://github.com/NatronGitHub/clut/blob/af7b50d4caf6244fb6895a647f5b6a84efe7931a/negative_new/fuji_400h.png",
+    "changes": "Converted 16-bit HaldCLUT to 33³ .cube with trilinear resampling; no creative grading changes."
+  },
+  {
+    "hash": "c69dbfefb186e3eee8ed9eb58db0193d4b90cf8dedc153226fb7ed4d0cc2c389",
+    "name": "Fuji Superia 400",
+    "source": "Pat David · G’MIC",
+    "license": "CC BY-SA 4.0",
+    "bundled": true,
+    "author": "Pat David",
+    "sourceUrl": "https://github.com/NatronGitHub/clut/blob/af7b50d4caf6244fb6895a647f5b6a84efe7931a/negative_old/fuji_superia_400.png",
+    "changes": "Converted 16-bit HaldCLUT to 33³ .cube with trilinear resampling; no creative grading changes."
+  },
+  {
+    "hash": "22d797d8f5b4b26cf3109d38708a0992dc6dcb428493d800447207b34734b867",
+    "name": "Fuji Velvia 50",
+    "source": "Pat David · G’MIC",
+    "license": "CC BY-SA 4.0",
+    "bundled": true,
+    "author": "Pat David",
+    "sourceUrl": "https://github.com/NatronGitHub/clut/blob/af7b50d4caf6244fb6895a647f5b6a84efe7931a/colorslide/fuji_velvia_50.png",
+    "changes": "Converted 16-bit HaldCLUT to 33³ .cube with trilinear resampling; no creative grading changes."
+  },
+  {
+    "hash": "7519f1849326860ec822352a16e0c7486957eec508e844b95b17e5a37dea68c4",
+    "name": "Kodachrome 64",
+    "source": "Pat David · G’MIC",
+    "license": "CC BY-SA 4.0",
+    "bundled": true,
+    "author": "Pat David",
+    "sourceUrl": "https://github.com/NatronGitHub/clut/blob/af7b50d4caf6244fb6895a647f5b6a84efe7931a/colorslide/kodak_kodachrome_64.png",
+    "changes": "Converted 16-bit HaldCLUT to 33³ .cube with trilinear resampling; no creative grading changes."
+  },
+  {
+    "hash": "b071579f98d18c4449aced0ac02f746c93705073c0fb06dc449bd9f8eefead61",
+    "name": "Kodak Tri-X 400",
+    "source": "Pat David · G’MIC",
+    "license": "CC BY-SA 4.0",
+    "bundled": true,
+    "author": "Pat David",
+    "sourceUrl": "https://github.com/NatronGitHub/clut/blob/af7b50d4caf6244fb6895a647f5b6a84efe7931a/bw/kodak_tri-x_400.png",
+    "changes": "Converted 16-bit HaldCLUT to 33³ .cube with trilinear resampling; no creative grading changes."
+  }
+]
