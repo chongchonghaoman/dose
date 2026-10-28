@@ -178,7 +178,7 @@ enum ReturnToPastRuntime {
         try await command(uv, ["pip", "install", "--python", python.path, "--only-binary", ":all:",
                               "--requirement", resources.appendingPathComponent("requirements.txt").path],
                           environment: installEnvironment, cancellation: cancellation)
-        try await command(python, ["-c", "import torch, torchvision, timm; from sharp.models import create_predictor; from sharp.utils.gaussians import save_ply; assert torch.__version__.split('+')[0] == '2.8.0'; assert torchvision.__version__.split('+')[0] == '0.23.0'; assert timm.__version__ == '1.0.20'"],
+        try await command(python, ["-c", "import torch, torchvision, timm; from sharp.models import create_predictor; from sharp.utils import io; from sharp.utils.gaussians import save_ply; assert torch.__version__.split('+')[0] == '2.8.0'; assert torchvision.__version__.split('+')[0] == '0.23.0'; assert timm.__version__ == '1.0.20'"],
                           environment: ["PYTHONPATH": resources.appendingPathComponent("sharp-source").path,
                                         "MPLBACKEND": "Agg", "MPLCONFIGDIR": runtime.appendingPathComponent("matplotlib").path],
                           cancellation: cancellation)

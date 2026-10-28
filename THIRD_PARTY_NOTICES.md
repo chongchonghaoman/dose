@@ -12,7 +12,7 @@ Sparkle 及其内含组件遵循其各自许可，完整许可随应用保存在
 
 ## SHARP 单图场景生成
 
-来源：https://github.com/apple/ml-sharp ，源码提交 `aed6527499ef91cba3b54c18d49a870f25947190`。随附 `src/sharp` 保持上游内容，应用另行提供推理适配代码。
+来源：https://github.com/apple/ml-sharp ，源码提交 `aed6527499ef91cba3b54c18d49a870f25947190`。随附 `src/sharp` 的 `utils/vis.py` 改为按需读取色图，避免照片读取时触发系统字体扫描；其余上游源码保持不变，应用另行提供推理适配代码。修改日期与详情见 `PROVENANCE.txt`。
 
 源码许可、模型许可、致谢和来源记录分别位于 `Sources/LightTableApp/Resources/ReturnToPast/sharp-source/` 下的 `LICENSE`、`LICENSE_MODEL`、`ACKNOWLEDGEMENTS` 与 `PROVENANCE.txt`，同时随应用打包在 `Contents/Resources/ReturnToPast/sharp-source/`。
 

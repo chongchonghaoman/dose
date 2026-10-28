@@ -36,34 +36,12 @@ struct FeatureGuideWelcome: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("观片台已更新").font(.system(size: 21, weight: .semibold))
-                    Text("v\(version) · 全新背光 EDR")
+                    Text("v\(version) · 体验优化")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }.padding(.bottom, 24)
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "sun.max.fill").accessibilityHidden(true)
-                    Text("背光 EDR").fontWeight(.semibold)
-                }
-                .font(.system(size: 13)).foregroundStyle(Color(red: 0.57, green: 0.32, blue: 0.09))
-                Text("透光更鲜明，层次依然清晰。")
-                    .font(.system(size: 23, weight: .semibold))
-                    .accessibilityAddTraits(.isHeader)
-                Text("亮部更通透，高光保留层次；暗部保持深度，不发灰。\n看见照片的透光感，也留住细节、色彩与对比度。")
-                    .font(.system(size: 13)).foregroundStyle(.secondary).lineSpacing(5)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading).padding(20)
-            .background(Color(red: 0.98, green: 0.94, blue: 0.86), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color(red: 0.73, green: 0.51, blue: 0.20).opacity(0.16)))
-            .padding(.bottom, 24)
-            feature("keyboard", title: "随时切换，凑近对照",
-                    text: "点击顶部「背光 EDR」，或按 E 切换。\n按住空格凑近照片时，也能按 E 对照观看。")
-            Divider().padding(.vertical, 18)
-            feature("slider.horizontal.3", title: "亮度自由调节",
-                    text: "EDR 默认 120%，可用右侧滑块调节。\n双击恢复默认；切换模式保留各自的亮度。")
-            Label("优化幻灯片音效", systemImage: "speaker.wave.2")
-                .font(.system(size: 13)).foregroundStyle(.secondary).padding(.top, 18)
+            feature("checkmark.circle", title: "优化使用体验",
+                    text: "修复部分问题，提升使用稳定性。")
             HStack(spacing: 10) {
                 Spacer()
                 Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle(primary: true))

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from matplotlib import pyplot as plt
 
 METRIC_DEPTH_MAX_CLAMP_METER = 50.0
 
@@ -58,7 +57,11 @@ def colorize_scalar_map(
     if scalar_map.ndim not in (2, 3, 4):
         raise ValueError("Only scalar maps of 2 or 3 or 4 dimensions supported.")
 
-    cmap = plt.get_cmap(color_map)
+    # RGB inference imports this module through io but needs no plotting/fonts.
+    # Colormap lookup also works without pyplot's macOS system font scan.
+    from matplotlib import colormaps
+
+    cmap = colormaps.get_cmap(color_map)
 
     scalar_map_np = scalar_map.detach().cpu().float().numpy()
     scalar_map_np = (scalar_map_np - val_min) / (val_max - val_min)

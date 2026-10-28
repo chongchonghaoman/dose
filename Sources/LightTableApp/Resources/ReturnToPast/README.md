@@ -1,6 +1,7 @@
 # Return to Past local runtime
 
-The application bundles the worker and unchanged SHARP Python source. On first use,
+The application bundles the worker and SHARP Python source with the documented
+font-independent image IO adjustment (see sharp-source/PROVENANCE.txt). On first use,
 ReturnToPastRuntime downloads uv 0.11.8, managed CPython 3.13.13, the exact inference
 requirements, and Apple SHARP checkpoint sharp_2572gikvuh.pt. The installed environment
 lives in ~/Library/Application Support/OurLightTable/ReturnToPast/runtime-v1 and is

@@ -6,7 +6,7 @@
 
 A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
 
-v0.1.107 开放 EDR 亮度调节，并优化幻灯片音效；延续「背光 EDR」的透光感、明暗层次与照片细节。完整内容及操作见 [更新说明](docs/releases/v0.1.107.md)。
+v0.1.108 优化使用体验，修复部分问题，提升使用稳定性。见[更新说明](docs/releases/v0.1.108.md)。
 
 ## 下载与运行
 
@@ -16,9 +16,9 @@ v0.1.107 开放 EDR 亮度调节，并优化幻灯片音效；延续「背光 ED
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-当前版本 **[v0.1.107](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.107)**：EDR 亮度自由调节，幻灯片自动采用 EDR，并优化加载、首张与换片音效。
+当前版本 **[v0.1.108](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.108)**：优化使用体验，修复部分问题，提升使用稳定性。
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.107/LightTable-v0.1.107-macOS-arm64.zip)**
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.108/LightTable-v0.1.108-macOS-arm64.zip)**
 
 从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
 
@@ -34,7 +34,7 @@ v0.1.107 开放 EDR 亮度调节，并优化幻灯片音效；延续「背光 ED
 
 ## 本版更新说明
 
-首次打开v0.1.107时显示说明卡，以「背光 EDR」的透光感、层次与细节为主，介绍快捷切换和亮度控制，并补充「优化幻灯片音效」。点击「开始观片」继续。本次说明仅自动展示一次，菜单「帮助 → 本次更新…」可以重看。旧版操作指南保留在文档中。
+首次打开v0.1.108时显示简短说明：“优化使用体验，修复部分问题，提升使用稳定性。”点击「开始观片」继续。本次说明仅自动展示一次，菜单「帮助 → 本次更新…」可以重看。旧版操作指南保留在文档中。
 
 ## 功能
 
