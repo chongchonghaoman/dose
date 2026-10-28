@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -eu
 cd "$(dirname "$0")/.."
+python3 scripts/check-source-boundary.py --tree .
 version=$(cat VERSION)
 swift build -c release
 binary=$(swift build -c release --show-bin-path)
@@ -12,6 +13,8 @@ sparkle="$PWD/.build/artifacts/sparkle/Sparkle"
 mkdir -p "$app/Contents/Frameworks"
 ditto "$sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
 cp "$sparkle/LICENSE" "$app/Contents/Resources/Sparkle-LICENSE.txt"
+ditto "$PWD/Binaries/LightTableEDR.xcframework/macos-arm64_x86_64/LightTableEDR.framework" "$app/Contents/Frameworks/LightTableEDR.framework"
+cp "$PWD/Binaries/EDR-LICENSE.txt" "$app/Contents/Resources/EDR-LICENSE.txt"
 soundResources="$binary/LightTable_LightTableApp.bundle"
 if [[ -d "$soundResources/Contents/Resources" ]]; then
     soundResources="$soundResources/Contents/Resources"
@@ -20,6 +23,8 @@ for sound in ShutterClick ShutterClickRoom ShutterArrivalRoom; do
     cp "$soundResources/$sound.wav" "$app/Contents/Resources/$sound.wav"
 done
 ditto "$soundResources/ReturnToPast" "$app/Contents/Resources/ReturnToPast"
+cp "$soundResources/FilmTransmission.cube" "$app/Contents/Resources/FilmTransmission.cube"
+cp "$soundResources/FilmTransmission.json" "$app/Contents/Resources/FilmTransmission.json"
 cp LICENSE "$app/Contents/Resources/LICENSE"
 cp THIRD_PARTY_NOTICES.md "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
 cat > "$app/Contents/Info.plist" <<PLIST
@@ -60,6 +65,7 @@ info.update(config)
 path.write_bytes(plistlib.dumps(info))
 PY
 plutil -lint "$app/Contents/Info.plist"
+python3 scripts/check-source-boundary.py --app "$app"
 codesign --force --sign - "$app"
 codesign --verify --deep --strict "$app"
 printf '%s\n' "$app"

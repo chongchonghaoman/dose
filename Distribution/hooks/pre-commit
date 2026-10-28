@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+python3 scripts/check-source-boundary.py --git-index .

@@ -9,3 +9,7 @@ dist/
 *~
 *.dSYM/
 debug-*
+
+# Proprietary implementation must remain outside this repository.
+/Private/
+/docs/research/

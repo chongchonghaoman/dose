@@ -93,7 +93,7 @@ actor SlideshowProjectionStore {
                 kCIInputBackgroundImageKey: transparent, kCIInputMaskImageKey: maskImage
             ])
             return context.createCGImage(result, from: extent, format: .RGBA8,
-                                         colorSpace: source.colorSpace ?? CGColorSpace(name: CGColorSpace.displayP3))
+                                         colorSpace: source.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB))
         }
         let blurred = input.clampedToExtent()
             .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: max(0.8, longest * 0.0012)])
@@ -107,7 +107,7 @@ actor SlideshowProjectionStore {
         let glowExtent = small.extent.insetBy(dx: -padding, dy: -padding).integral
         let scattered = small.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: max(1, longest * scale * 0.025)])
         let glow = context.createCGImage(scattered, from: glowExtent, format: .RGBA8,
-                                        colorSpace: source.colorSpace ?? CGColorSpace(name: CGColorSpace.displayP3))
+                                        colorSpace: source.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB))
         return ProjectionPhoto(url: url, sharp: sharp, soft: soft, glow: glow,
                                glowOutset: padding / (longest * scale))
     }

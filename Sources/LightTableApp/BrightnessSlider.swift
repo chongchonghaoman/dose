@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct BrightnessSlider: NSViewRepresentable {
+    @Environment(\.isEnabled) private var isEnabled
     @Binding var value: Double
     let range: ClosedRange<Double>
     let defaultValue: Double
@@ -15,7 +16,6 @@ struct BrightnessSlider: NSViewRepresentable {
         slider.target = context.coordinator
         slider.action = #selector(Coordinator.changed(_:))
         slider.setAccessibilityLabel("灯光亮度")
-        slider.toolTip = "拖动调整亮度；双击滑杆恢复 100%"
         configure(slider)
         return slider
     }
@@ -29,8 +29,11 @@ struct BrightnessSlider: NSViewRepresentable {
         slider.minValue = range.lowerBound
         slider.maxValue = range.upperBound
         slider.defaultValue = defaultValue
+        slider.isEnabled = isEnabled
         if slider.doubleValue != value { slider.doubleValue = value }
-        slider.setAccessibilityValueDescription("\(Int(value * 100))%")
+        let percentage = "\(Int(value * 100))%"
+        slider.toolTip = isEnabled ? "拖动调整亮度；双击滑杆恢复 100%" : "亮度固定为 \(percentage)，不可调节"
+        slider.setAccessibilityValueDescription(isEnabled ? percentage : "\(percentage)，不可调节")
     }
 
     final class Coordinator: NSObject {
@@ -38,8 +41,12 @@ struct BrightnessSlider: NSViewRepresentable {
         init(value: Binding<Double>) { self.value = value }
 
         @objc func changed(_ slider: NSSlider) {
-            value.wrappedValue = slider.doubleValue
-            slider.setAccessibilityValueDescription("\(Int(slider.doubleValue * 100))%")
+            if slider.isEnabled { value.wrappedValue = slider.doubleValue }
+            // Restore the binding's accepted value, including a mode change
+            // that locks brightness before this queued action is delivered.
+            slider.doubleValue = value.wrappedValue
+            let percentage = "\(Int(slider.doubleValue * 100))%"
+            slider.setAccessibilityValueDescription(slider.isEnabled ? percentage : "\(percentage)，不可调节")
         }
     }
 }

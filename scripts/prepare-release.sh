@@ -2,6 +2,10 @@
 # Local preparation only. This script never creates a tag, pushes or uploads.
 set -eu
 cd "$(dirname "$0")/.."
+python3 scripts/check-source-boundary.py --tree .
+if git rev-parse --show-toplevel >/dev/null 2>&1 && [[ "$(git rev-parse --show-toplevel)" == "$PWD" ]]; then
+    python3 scripts/check-source-boundary.py --git-index .
+fi
 releaseRoot="$PWD"
 releaseVersion=$(cat VERSION)
 if [[ ! "$releaseVersion" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
@@ -38,6 +42,7 @@ mkdir -p "$releaseOutput"
 releaseOutput="${releaseOutput:A}"
 releaseBase="LightTable-v$releaseVersion-macOS-arm64"
 ditto -c -k --sequesterRsrc --keepParent "$releaseApp" "$releaseOutput/$releaseBase.zip"
+python3 scripts/check-source-boundary.py --archive "$releaseOutput/$releaseBase.zip"
 cp "$releaseNotes" "$releaseOutput/$releaseBase.md"
 "$sparkleTools/generate_appcast" --account fuyuan9972-svg.LightTable.updates \
     --download-url-prefix "https://github.com/fuyuan9972-svg/LightTable/releases/download/v$releaseVersion/" \

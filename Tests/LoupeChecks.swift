@@ -63,69 +63,90 @@ struct LoupeChecks {
         let crossing = pixels(render(CGPoint(x: 0, y: 0), refracts: true))
         precondition(stride(from: 3, to: crossing.count, by: 4).allSatisfy { crossing[$0] == 255 }, "photo edge left a transparent seam")
         print("PASS lens across photo and mount edges stays fully opaque")
-        // Encode horizontal source position as a ramp. A glass rim must not
-        // repeat, reverse, jump, or stretch a narrow source strip into a ring.
-        for x in 0..<size {
-            let value = min(1, max(0, Double(x - 240) / 120))
-            context.setFillColor(CGColor(red: value, green: 0.3, blue: 0.3, alpha: 1))
-            context.fill(CGRect(x: x, y: 0, width: 1, height: size))
-        }
-        let ramp = context.makeImage()!
+        // Encode source position as a float linear midtone ramp. An 8-bit
+        // highlight ramp measures the SDR shoulder/quantization, not geometric
+        // displacement (the old fixture produced a shift of only 1 code value).
+        var rampValues = [Float](repeating: 1, count: size * size * 4)
+        for y in 0..<size { for x in 0..<size {
+            let index = (y * size + x) * 4
+            rampValues[index] = 0.05 + 0.60 * min(1, max(0, Float(x - 240) / 120))
+            rampValues[index + 1] = 0.05
+            rampValues[index + 2] = 0.05
+        } }
+        let rampData = rampValues.withUnsafeBytes { Data($0) }
+        let ramp = CGImage(width: size, height: size, bitsPerComponent: 32, bitsPerPixel: 128,
+            bytesPerRow: size * 16, space: PhotoOptics.linearSpace,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+                .union(.floatComponents).union(.byteOrder32Little),
+            provider: CGDataProvider(data: rampData as CFData)!, decode: nil,
+            shouldInterpolate: true, intent: .defaultIntent)!
         let rampPreview = PhotoPreview(source: ramp, lit: ramp, dark: ramp, flare: ramp)
-        func rampPixels(_ refracts: Bool) -> [UInt8] {
-            pixels(LoupeRenderer.shared.render(preview: rampPreview, point: CGPoint(x: 300, y: 300),
-                imageSize: CGSize(width: 600, height: 600), diameter: 260, magnification: 2.5,
-                displayScale: 2, transmission: 1, flare: 0, brightness: 1, refracts: refracts)!)
-        }
-        let straightRamp = rampPixels(false), glassRamp = rampPixels(true)
-        var largestShift = 0
-        for x in 261..<515 {
-            let i = (260 * 520 + x) * 4
-            let step = Int(glassRamp[i]) - Int(glassRamp[i - 4])
-            precondition(step >= -1 && step <= 3, "rim contains a radial fold or sampling seam")
-            largestShift = max(largestShift, abs(Int(glassRamp[i]) - Int(straightRamp[i])))
-        }
-        precondition(largestShift >= 3 && largestShift <= 5, "edge refraction is absent or excessive")
-        print("PASS radial sampling stays continuous, monotonic and bounded (ramp shift \(largestShift))")
         let rampPhoto = LoupeScenePhoto(preview: rampPreview, center: CGPoint(x: 300, y: 300),
             imageSize: CGSize(width: 600, height: 600))
-        let closeRamp = pixels(LoupeRenderer.shared.render(photos: [rampPhoto], point: CGPoint(x: 300, y: 300),
-            diameter: 260, magnification: 2.5, displayScale: 2, transmission: 1, flare: 0, brightness: 1,
-            refractionScale: 0.75)!)
-        var fullShift = 0, closeShift = 0
-        for x in 490..<515 {
-            let i = (260 * 520 + x) * 4
-            fullShift += abs(Int(glassRamp[i]) - Int(straightRamp[i]))
-            closeShift += abs(Int(closeRamp[i]) - Int(straightRamp[i]))
+        let geometryContext = CIContext(options: [.workingColorSpace: PhotoOptics.linearSpace,
+            .workingFormat: CIFormat.RGBAf, .cacheIntermediates: false])
+        func rampRow(diameter: CGFloat, scale: CGFloat, strength: CGFloat) -> [Float] {
+            let graph = LoupeRenderer.shared.composite(photos: [rampPhoto], point: CGPoint(x: 300, y: 300),
+                diameter: diameter, magnification: 2.5 * diameter / 260, displayScale: scale,
+                transmission: 1, flare: 0, brightness: 1, refractionScale: strength)!
+            let width = Int(diameter * scale)
+            var samples = [Float](repeating: 0, count: width * 4)
+            samples.withUnsafeMutableBytes {
+                geometryContext.render(graph, toBitmap: $0.baseAddress!, rowBytes: width * 16,
+                    bounds: CGRect(x: 0, y: width / 2, width: width, height: 1),
+                    format: .RGBAf, colorSpace: PhotoOptics.linearSpace)
+            }
+            return stride(from: 0, to: samples.count, by: 4).map { samples[$0] }
         }
-        precondition(Double(closeShift) > Double(fullShift) * 0.60 && Double(closeShift) < Double(fullShift) * 0.90,
-            "close viewing lost the visible, smoothly reduced radial refraction")
-        print("PASS close viewing retains substantial curvature with a smooth reduction")
-        var rimShifts = [Int]()
+        func sourcePosition(_ value: Float, in row: [Float]) -> Double {
+            var lower = row.count / 2, upper = row.count - 1
+            while upper - lower > 1 {
+                let middle = (lower + upper) / 2
+                if row[middle] < value { lower = middle } else { upper = middle }
+            }
+            return Double(lower) + Double(value - row[lower]) / Double(row[upper] - row[lower])
+        }
+        func smooth(_ a: Double, _ b: Double, _ x: Double) -> Double {
+            let t = min(1, max(0, (x - a) / (b - a)))
+            return t * t * (3 - 2 * t)
+        }
+        var measuredRims: [Double] = []
         for diameter: CGFloat in [260, 780] {
             for scale: CGFloat in [1, 2, 3] {
-                let shift = autoreleasepool { () -> Int in
-                    func scaledRamp(_ refracts: Bool) -> CGImage {
-                        LoupeRenderer.shared.render(preview: rampPreview, point: CGPoint(x: 300, y: 300),
-                            imageSize: CGSize(width: 600, height: 600), diameter: diameter,
-                            magnification: 2.5 * diameter / 260, displayScale: scale,
-                            transmission: 1, flare: 0, brightness: 1, refracts: refracts)!
+                let plain = rampRow(diameter: diameter, scale: scale, strength: 0)
+                let radius = Double(plain.count) / 2
+                var fullRim = 0.0, closeRim = 0.0
+                for strength: CGFloat in [1, 0.75] {
+                    let bent = rampRow(diameter: diameter, scale: scale, strength: strength)
+                    var previousPosition = -Double.infinity
+                    var largestInset = 0.0, largestError = 0.0
+                    for x in Int(radius * 1.76)..<Int(radius * 1.995) {
+                        let position = sourcePosition(bent[x], in: plain)
+                        precondition(position.isFinite && position >= previousPosition - 0.02,
+                            "rim folds or repeats a source strip")
+                        previousPosition = position
+                        let measuredInset = (Double(x) - position) / radius
+                        let r = hypot(Double(x) + 0.5 - radius, 0.5) / radius
+                        let expectedInset = (0.028 * smooth(0.75, 1, r) + 0.004 * smooth(0.94, 1, r)) * Double(strength)
+                        largestInset = max(largestInset, measuredInset)
+                        largestError = max(largestError, abs(measuredInset - expectedInset))
                     }
-                    let plain = pixels(scaledRamp(false)), bent = pixels(scaledRamp(true))
-                    let width = Int(diameter * scale), radius = width / 2
-                    // Subpixel movement can quantize to zero at one 8-bit
-                    // sample. Compare the rim band at every display scale.
-                    return (Int(Double(radius) * 1.90)..<Int(Double(radius) * 1.995)).map { x in
-                        let i = (radius * width + x) * 4
-                        return abs(Int(plain[i]) - Int(bent[i]))
-                    }.max() ?? 0
+                    precondition(largestError < 0.001,
+                        "glass displacement differs from its optical curve: \(largestError), diameter \(diameter), scale \(scale)")
+                    precondition(largestInset > 0.030 * Double(strength) && largestInset < 0.033 * Double(strength),
+                        "edge refraction absent or excessive: \(largestInset)")
+                    if strength == 1 { fullRim = largestInset } else { closeRim = largestInset }
                 }
-                precondition(shift >= 3 && shift <= 5, "glass curvature sample shift \(shift) at diameter \(diameter), scale \(scale)")
-                rimShifts.append(shift)
+                precondition(closeRim / fullRim > 0.60 && closeRim / fullRim < 0.90,
+                    "close viewing lost its smooth refraction reduction: \(closeRim / fullRim)")
+                measuredRims.append(fullRim)
             }
         }
-        precondition(rimShifts.max()! - rimShifts.min()! <= 2, "approaching or Retina scale changes lens curvature")
-        print("PASS normal and close lenses retain moderate bounded curvature at 1x, 2x and 3x display scales")
+        precondition(measuredRims.max()! - measuredRims.min()! < 0.001,
+            "approach or Retina scale changes physical lens curvature")
+        print("PASS floating-point ramp verifies monotonic 3.2% edge displacement and its full optical curve")
+        print("PASS close viewing preserves 75% of the refraction strength")
+        print("PASS normal/close lenses keep equal source curvature at 1x, 2x and 3x: \(measuredRims)")
         func solid(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> PhotoPreview {
             context.setFillColor(CGColor(red: r, green: g, blue: b, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: size, height: size))

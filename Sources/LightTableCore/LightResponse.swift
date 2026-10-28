@@ -1,4 +1,5 @@
 import Foundation
+import LightTableEDR
 
 /// Unitless contributions shared by lamp, photographs and loupe.
 /// Art-directed display response, not a calibrated light/eye model.
@@ -23,10 +24,13 @@ public enum LightResponse {
     public static let settlingDuration: TimeInterval = 1.10
     public static let steadyGlow: Double = 0.50
     public static let steadyPanelWhite: Double = 0.90
-    public static func panelWhite(brightness: Double = 1, flare: Double = 0) -> Double {
+    public static func panelWhite(brightness: Double = 1, flare: Double = 0,
+                                  edrEnabled: Bool = false) -> Double {
         let power = min(1.6, max(0.1, brightness.isFinite ? brightness : 1))
-        let steady = power <= 1 ? 0.32 + (steadyPanelWhite - 0.32) * sqrt(power)
-                               : steadyPanelWhite + (power - 1) * 0.08
+        let ordinarySteady = power <= 1 ? 0.32 + (steadyPanelWhite - 0.32) * sqrt(power)
+                                       : steadyPanelWhite + (power - 1) * 0.08
+        // Lift only the panel material; keep the slider and photograph exposure unchanged.
+        let steady = edrEnabled ? LTEDRPanelLevel(ordinarySteady) : ordinarySteady
         // Leave SDR headroom for the same brief adaptation seen in the film.
         return steady + min(0.10, 1 - steady) * photoGlowMix(flare: flare, brightness: power)
     }

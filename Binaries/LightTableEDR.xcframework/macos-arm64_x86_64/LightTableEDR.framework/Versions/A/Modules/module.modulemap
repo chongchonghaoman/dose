@@ -1,0 +1,5 @@
+framework module LightTableEDR {
+  umbrella header "LightTableEDR.h"
+  export *
+  module * { export * }
+}

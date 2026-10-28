@@ -4,10 +4,15 @@ import CryptoKit
 import ImageIO
 import UniformTypeIdentifiers
 
+private enum PhotoPreviewColorSpace {
+    static let encodedSRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+    static let linearSRGB = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
+}
+
 final class PhotoPreview: @unchecked Sendable {
     /// Unmodified, oriented preview for comparisons; never written back to disk.
     let source: CGImage
-    /// Steady transmitted light with localized spill around existing bright apertures.
+    /// Stable linear-sRGB transmission response with localized light spill.
     let lit: CGImage
     let dark: CGImage
     /// Highlight-only switch-on halo, screened over a stable exposure.
@@ -82,7 +87,10 @@ struct TablePreviewRequest: Hashable {
 /// Bounded previews only; no source image is ever written or re-encoded.
 actor PhotoStore {
     static let shared = PhotoStore()
-    private let context = CIContext(options: [.cacheIntermediates: false])
+    private let context = CIContext(options: [
+        .workingColorSpace: PhotoPreviewColorSpace.linearSRGB,
+        .cacheIntermediates: false
+    ])
     private let cacheDirectory: URL
     private struct PreviewKey: Hashable { let url: URL; let maxPixel: Int }
     private var cache: [PreviewKey: PhotoPreview] = [:]
@@ -114,7 +122,7 @@ actor PhotoStore {
         ])
         guard let dark = context.createCGImage(darkCI, from: input.extent,
                                                format: .RGBA8,
-                                               colorSpace: CGColorSpace(name: CGColorSpace.displayP3)) else { return nil }
+                                               colorSpace: PhotoPreviewColorSpace.encodedSRGB) else { return nil }
         guard let lit = renderTransmission(input, boosted: false),
               let boosted = renderTransmission(input, boosted: true),
               let flare = renderSwitchOnHalo(input) else { return nil }
@@ -124,12 +132,14 @@ actor PhotoStore {
         return value
     }
 
-    /// Existing bright apertures emit a tight rim plus a faint, wider diffusion.
+    /// Apply the same color-preserving transmission curve to every RGB pixel,
+    /// then let bright colored regions emit a tight rim and faint diffusion.
     /// Scatter is evaluated once in source coordinates, not while moving the lens.
     /// Keep the source sharp: only the emitted light is blurred. Nearby opaque
-    /// film can receive optical scatter; distant blacks and midtones stay intact.
+    /// film can receive optical scatter; distant blacks stay opaque.
     private func renderTransmission(_ input: CIImage, boosted: Bool) -> CGImage? {
-        let highlights = Self.cube(input, data: Self.highlightCube)
+        let transmittedColor = Self.cube(input, data: Self.transmissionCube)
+        let highlights = Self.cube(transmittedColor, data: Self.transmissionHighlightCube)
         let dimension = max(input.extent.width, input.extent.height)
         let rim = outwardScatter(highlights, radius: dimension * (boosted ? 0.0045 : 0.0035),
                                  strength: boosted ? 0.24 : 0.09)
@@ -137,11 +147,11 @@ actor PhotoStore {
                                        strength: boosted ? 0.085 : 0.025)
         let transmitted = diffusion.applyingFilter("CIScreenBlendMode", parameters: [
             kCIInputBackgroundImageKey: rim.applyingFilter("CIScreenBlendMode", parameters: [
-                kCIInputBackgroundImageKey: input
+                kCIInputBackgroundImageKey: transmittedColor
             ])
         ])
         return context.createCGImage(transmitted, from: input.extent, format: .RGBA8,
-                                     colorSpace: CGColorSpace(name: CGColorSpace.displayP3))
+                                     colorSpace: PhotoPreviewColorSpace.encodedSRGB)
     }
 
     private func outwardScatter(_ highlights: CIImage, radius: Double, strength: Double) -> CIImage {
@@ -190,11 +200,29 @@ actor PhotoStore {
             kCIInputBackgroundImageKey: core
         ])
         return context.createCGImage(halo, from: input.extent, format: .RGBA8,
-                                     colorSpace: CGColorSpace(name: CGColorSpace.displayP3))
+                                     colorSpace: PhotoPreviewColorSpace.encodedSRGB)
     }
 
     private static let cubeDimension = 32
-    private static let cubeSpace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!
+    private static let cubeSpace = PhotoPreviewColorSpace.linearSRGB
+    /// A simple sRGB transmission approximation, not a measured film model.
+    /// Per-pixel RGB ratios stay fixed while density, midtones, and highlights
+    /// all participate in the same smooth lift.
+    private static let transmissionCube = makeCube { r, g, b in
+        let light = luminance(r, g, b)
+        let peak = max(r, max(g, b))
+        let density = 1 - 0.06 * (1 - smoothstep(0.008, 0.12, light))
+        let opening = 0.65 * smoothstep(0.045, 0.55, light)
+        let gain = density + opening * (1 - peak)
+        return (r * gain, g * gain, b * gain)
+    }
+    /// Bright colored areas participate without requiring almost-white luminance.
+    /// The luminance gate keeps dark saturated details out of the light source.
+    private static let transmissionHighlightCube = makeCube { r, g, b in
+        let mask = smoothstep(0.22, 0.78, max(r, max(g, b)))
+            * smoothstep(0.04, 0.32, luminance(r, g, b))
+        return (r * mask, g * mask, b * mask)
+    }
     private static let highlightCube = makeCube { r, g, b in
         let mask = smoothstep(0.60, 0.92, luminance(r, g, b))
         return (r * mask, g * mask, b * mask)
@@ -217,7 +245,7 @@ actor PhotoStore {
     }
 
     private static func luminance(_ r: Float, _ g: Float, _ b: Float) -> Float {
-        0.228975 * r + 0.691739 * g + 0.079287 * b
+        0.2126 * r + 0.7152 * g + 0.0722 * b
     }
 
     private static func smoothstep(_ start: Float, _ end: Float, _ value: Float) -> Float {
@@ -259,7 +287,10 @@ actor PhotoStore {
             kCGImageSourceShouldCache: false,
             kCGImageSourceShouldCacheImmediately: true
         ]
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        guard let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        let tagged = CIImage(cgImage: decoded)
+        return context.createCGImage(tagged, from: tagged.extent, format: .RGBA8,
+                                     colorSpace: PhotoPreviewColorSpace.encodedSRGB)
     }
 }
 
@@ -267,8 +298,8 @@ actor PhotoStore {
 /// includes source metadata and the rendering recipe; originals are never touched.
 enum PhotoPreviewDiskCache {
     static let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        .appendingPathComponent("OurLightTable/previews-v2", isDirectory: true)
-    private static let recipe = "transmission-scatter-2"
+        .appendingPathComponent("OurLightTable/previews-v3", isDirectory: true)
+    private static let recipe = "uniform-srgb-transmission-scatter-v4"
     private static let layerNames = ["source", "lit", "dark", "flare", "boosted"]
 
     private static func folder(_ url: URL, maxPixel: Int, root: URL) -> URL? {

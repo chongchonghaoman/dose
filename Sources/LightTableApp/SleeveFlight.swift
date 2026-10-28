@@ -21,6 +21,7 @@ struct SleeveFlightView: View {
     let preview: PhotoPreview?
     let isLit: Bool
     let brightness: Double
+    let edrEnabled: Bool
     let reduceMotion: Bool
 
     var body: some View {
@@ -37,7 +38,7 @@ struct SleeveFlightView: View {
                 .frame(width: imageSize.width, height: imageSize.height)
             if let preview {
                 TransmittedPhoto(preview: preview, size: imageSize, transmission: isLit ? 1 : 0,
-                                 flare: 0, brightness: brightness)
+                                 flare: 0, brightness: brightness, edrEnabled: edrEnabled)
                     .opacity(Double(inset))
             }
         }

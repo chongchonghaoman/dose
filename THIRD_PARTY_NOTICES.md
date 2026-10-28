@@ -41,4 +41,9 @@ v0.1.65 曾为静音版。v0.1.69 根据项目维护者的明确要求恢复「�
 
 ## 项目代码
 
-本仓库原创代码及随附文档使用根目录 [LICENSE](LICENSE) 中的 MIT 许可证；上述第三方组件、模型与音频除外。
+本仓库开源基础代码及随附文档使用根目录 [LICENSE](LICENSE) 中的 MIT 许可证；上述第三方组件、模型与音频除外。
+
+
+## 第一方 EDR 专有组件
+
+Binaries/LightTableEDR.xcframework（含公开调用头文件）是第一方专有二进制，按Binaries/EDR-LICENSE.txt授权，不纳入根目录MIT许可。安装包保留该许可。其余组件仍分别适用上述许可。

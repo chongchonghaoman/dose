@@ -3,7 +3,8 @@ import SwiftUI
 import LightTableCore
 
 private final class KeyWindow: NSWindow {
-    override var isKeyWindow: Bool { true }
+    var reportsKeyWindow = true
+    override var isKeyWindow: Bool { reportsKeyWindow }
 }
 
 private struct PreferenceProbe: View {
@@ -38,6 +39,40 @@ private actor RasterGate {
         func check(_ condition: Bool, _ message: String) {
             precondition(condition, message); count += 1; print("PASS \(message)")
         }
+        let brightnessModel = TableModel(restore: false)
+        let brightnessBinding = Binding(get: { brightnessModel.lampBrightness },
+            set: { brightnessModel.lampBrightness = $0 })
+        let brightnessCoordinator = BrightnessSlider.Coordinator(value: brightnessBinding)
+        let brightnessSlider = ResettableBrightnessSlider()
+        brightnessSlider.minValue = 0.1; brightnessSlider.maxValue = 1.6
+        brightnessSlider.defaultValue = TableModel.defaultLampBrightness
+        brightnessSlider.doubleValue = brightnessModel.lampBrightness
+        brightnessSlider.target = brightnessCoordinator
+        brightnessSlider.action = #selector(BrightnessSlider.Coordinator.changed(_:))
+        brightnessSlider.isEnabled = false
+        let brightnessReset = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            eventNumber: 0, clickCount: 2, pressure: 1)!
+        brightnessSlider.mouseDown(with: brightnessReset)
+        check(brightnessSlider.doubleValue == 1.2 && brightnessModel.lampBrightness == 1.2,
+              "disabled EDR slider ignores double-click reset")
+        brightnessSlider.doubleValue = 0.4
+        brightnessCoordinator.changed(brightnessSlider)
+        check(brightnessSlider.doubleValue == 1.2 && brightnessModel.lampBrightness == 1.2,
+              "disabled slider callbacks retain fixed 120 percent EDR and restore the knob")
+        brightnessSlider.isEnabled = true
+        brightnessSlider.doubleValue = 0.7
+        brightnessCoordinator.changed(brightnessSlider)
+        check(brightnessSlider.doubleValue == 1.2 && brightnessModel.lampBrightness == 1.2,
+              "stale enabled-slider action cannot overwrite EDR brightness")
+        brightnessModel.backlightEDREnabled = false
+        brightnessSlider.doubleValue = 0.75
+        brightnessCoordinator.changed(brightnessSlider)
+        check(brightnessModel.lampBrightness == 0.75,
+              "ordinary-mode slider resumes continuous adjustment")
+        brightnessSlider.mouseDown(with: brightnessReset)
+        check(brightnessSlider.doubleValue == 1 && brightnessModel.lampBrightness == 1,
+              "ordinary-mode double click still restores 100 percent")
         let contactImages = FilmContactVariant.allCases.map { FilmContactTexture.image(for: $0)! }
         check(contactImages.reduce(0) { $0 + $1.bytesPerRow * $1.height } == 108 * 1024,
               "three shared contact textures use 108 KiB regardless of photo count or resolution")
@@ -657,10 +692,12 @@ private actor RasterGate {
         monitor.released = { releases += 1 }
         monitor.cancelled = { cancellations += 1 }
         func key(_ type: NSEvent.EventType, repeat repeated: Bool = false,
-                 modifiers: NSEvent.ModifierFlags = [], number: Int? = nil, code: UInt16 = 49) -> NSEvent {
-            NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers, timestamp: 0,
-                windowNumber: number ?? window.windowNumber, context: nil, characters: code == 48 ? "\t" : " ",
-                charactersIgnoringModifiers: code == 48 ? "\t" : " ", isARepeat: repeated, keyCode: code)!
+                 modifiers: NSEvent.ModifierFlags = [], number: Int? = nil, code: UInt16 = 49,
+                 characters: String? = nil) -> NSEvent {
+            let chars = characters ?? (code == 48 ? "\t" : code == 14 ? "e" : " ")
+            return NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers, timestamp: 0,
+                windowNumber: number ?? window.windowNumber, context: nil, characters: chars,
+                charactersIgnoringModifiers: chars, isARepeat: repeated, keyCode: code)!
         }
         check(monitor.handle(key(.keyDown)) == nil && monitor.handle(key(.keyDown, repeat: true)) == nil && presses == 1,
               "keyboard consumes held space without autorepeat reentry or beep")
@@ -734,6 +771,66 @@ private actor RasterGate {
         check(monitor.handle(key(.keyUp, code: 48)) != nil &&
               monitor.handle(key(.keyDown, code: 48)) != nil && cycles == 5,
               "leaving loupe mode clears Tab capture and restores normal navigation")
+
+        var edrOn = true, edrToggles = 0
+        monitor.toggleEDR = { edrOn.toggle(); edrToggles += 1 }
+        monitor.enabled = true
+        _ = monitor.handle(key(.keyDown))
+        let edrPoint = state.sourcePoint, edrMagnification = state.closeMagnification
+        check(state.isClose && monitor.handle(key(.keyDown, code: 14)) == nil && !edrOn && edrToggles == 1 &&
+              state.isClose && state.cursorHidden && state.sourcePoint == edrPoint &&
+              state.closeMagnification == edrMagnification,
+              "E toggles EDR off while held space retains the close lens, source point and magnification")
+        check(monitor.handle(key(.keyDown, repeat: true, code: 14)) == nil && edrToggles == 1 &&
+              monitor.handle(key(.keyDown, repeat: true)) == nil && state.isClose,
+              "holding E or space does not repeatedly toggle EDR or release close viewing")
+        check(monitor.handle(key(.keyUp, modifiers: .shift, code: 14)) == nil && !edrOn && state.isClose,
+              "E release is consumed without reverting EDR or changing held-space viewing")
+        check(monitor.handle(key(.keyDown, code: 14)) == nil && edrOn && edrToggles == 2 && state.isClose,
+              "a second E press toggles EDR back on without releasing space")
+        _ = monitor.handle(key(.keyUp, code: 14))
+        check(monitor.handle(key(.keyUp)) == nil && !state.isClose && edrOn,
+              "space release retains the chosen EDR state and exits only close viewing")
+        check(monitor.handle(key(.keyDown, repeat: true, code: 14)) != nil && edrToggles == 2,
+              "stray E autorepeat without a captured key press never toggles EDR")
+        for modifiers: NSEvent.ModifierFlags in [.command, .control, .option, .shift] {
+            check(monitor.handle(key(.keyDown, modifiers: modifiers, code: 14)) != nil && edrToggles == 2,
+                  "modified E passes through unchanged: \(modifiers.rawValue)")
+        }
+        window.makeFirstResponder(text)
+        check(monitor.handle(key(.keyDown, code: 14)) != nil && edrToggles == 2,
+              "text input keeps E without toggling the viewing mode")
+        window.makeFirstResponder(monitor)
+        check(monitor.handle(key(.keyDown, number: 0, code: 14)) != nil && edrToggles == 2,
+              "another window's E never toggles this table")
+        window.reportsKeyWindow = false
+        check(monitor.handle(key(.keyDown, code: 14)) != nil && edrToggles == 2,
+              "an inactive window ignores the EDR shortcut")
+        window.reportsKeyWindow = true
+        monitor.loupeEnabled = false
+        check(monitor.handle(key(.keyDown, code: 14)) == nil && !edrOn && edrToggles == 3 && !state.cursorEnabled,
+              "E also works in pointer mode without enabling loupe cursor hiding")
+        check(monitor.handle(key(.keyDown)) != nil && monitor.handle(key(.keyDown, code: 48)) != nil &&
+              !state.isClose && cycles == 5,
+              "pointer mode still leaves space and Tab to normal navigation")
+        _ = monitor.handle(key(.keyUp, code: 14))
+        check(monitor.handle(key(.keyDown, code: 14, characters: "x")) != nil && edrToggles == 3 &&
+              monitor.handle(key(.keyDown, code: 2, characters: "e")) == nil && edrToggles == 4,
+              "EDR shortcut follows the E character rather than a fixed keyboard layout")
+        check(monitor.handle(key(.keyUp, modifiers: .shift, code: 2, characters: "X")) == nil,
+              "EDR release tracks its captured physical key even if the character changes")
+        _ = monitor.handle(key(.keyDown, code: 14))
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        check(monitor.handle(key(.keyUp, code: 14)) != nil && edrToggles == 5,
+              "focus loss clears the captured E key without changing EDR")
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+        check(monitor.handle(key(.keyDown, code: 14)) == nil && edrToggles == 6,
+              "E can toggle again after returning to the window")
+        monitor.enabled = false
+        monitor.reset()
+        check(monitor.handle(key(.keyUp, code: 14)) != nil &&
+              monitor.handle(key(.keyDown, code: 14)) != nil && edrToggles == 6,
+              "disabled table modes clear E capture and do not toggle EDR")
         monitor.stop()
         check(cancellations > 1, "view teardown cancels input state and removes monitor")
 

@@ -6,7 +6,7 @@
 
 A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
 
-v0.1.87 新增「回到过去」：从单张原始照片在本机生成高斯场景，黑场逐粒显现，并可小范围移动视角。完整内容及操作步骤见 [更新说明](docs/releases/v0.1.87.md)。
+v0.1.103 带来全新「背光 EDR」：亮部更通透，高光保留层次，暗部保持深度，留住细节、色彩与对比度。完整内容及操作见 [更新说明](docs/releases/v0.1.103.md)。
 
 ## 下载与运行
 
@@ -16,9 +16,9 @@ v0.1.87 新增「回到过去」：从单张原始照片在本机生成高斯场
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-当前版本 **[v0.1.87](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.87)**：新增「回到过去」、动态入口及场景交互，改善幻灯片入场。
+当前版本 **[v0.1.103](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.103)**：全新背光 EDR，保留明暗层次与照片细节，支持快捷切换和亮度滑块收展。
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.87/LightTable-v0.1.87-macOS-arm64.zip)**
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.103/LightTable-v0.1.103-macOS-arm64.zip)**
 
 从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
 
@@ -34,7 +34,7 @@ v0.1.87 新增「回到过去」：从单张原始照片在本机生成高斯场
 
 ## 本版更新说明
 
-首次打开v0.1.87时显示说明卡，介绍「回到过去」的拖片生成、视角操作和首次下载。点击「开始观片」继续。本次说明仅自动展示一次，菜单「帮助 → 本次更新…」可以重看。旧版操作指南保留在文档中。
+首次打开v0.1.103时显示说明卡，以「背光 EDR」的透光感、层次与细节为主，介绍快捷切换和亮度控制。点击「开始观片」继续。本次说明仅自动展示一次，菜单「帮助 → 本次更新…」可以重看。旧版操作指南保留在文档中。
 
 ## 功能
 
@@ -43,6 +43,7 @@ v0.1.87 新增「回到过去」：从单张原始照片在本机生成高斯场
 - 点选底栏照片或文件名后按 Delete，删除单张；右键底栏标签 →「删除底栏」移除整栏。两者均移除台面对应散片，其他底栏、独立相册和磁盘原图保留。
 - 「一键平铺」将当前底栏的照片重新摆放到台面；**会清空当前散片布局并重新排列**。
 - 开关灯与亮度调整，带短暂过曝回落效果。
+- 背光 EDR：亮度固定为120%，开启时亮度滑块平滑收起；回到普通模式后展开并恢复之前的亮度。
 - 普通放大镜1.5×；按住空格凑近，可选随窗口适配的原倍率或固定8×，松开退回。
 - 胶片袋式相册页与整页摆放。
 - 全屏幻灯：黑色背景、居中单张照片、随机播放顺序和机械换片动画；幻灯模式不显示放大镜。
@@ -71,6 +72,7 @@ v0.1.87 新增「回到过去」：从单张原始照片在本机生成高斯场
 | A / V | 普通指针 / 放大镜 |
 | Tab | 放大镜模式下切换原倍率 / 8× |
 | 按住空格 | 凑近观察；松开退回 |
+| E | 开关背光 EDR；按住空格凑近时也可使用 |
 | ⇧Z | 整理台面并回到全局 |
 | ⌘点选 / Shift拖动 | 多选 / 框选台面照片 |
 | Delete | 台面选中照片：收回原栏；底栏选中照片：删除该张及台面对应散片 |
@@ -131,4 +133,9 @@ swift test
 
 通过 [Issues](https://github.com/fuyuan9972-svg/LightTable/issues) 报告问题，请附 macOS 版本、芯片型号和复现步骤。提交截图或录屏前，请移除不希望公开的照片及个人信息。
 
-原创代码采用 [MIT 许可证](LICENSE)。Sparkle、SHARP、PlayCanvas、OOOSplat及第三方音频遵循各自许可，不纳入本项目的MIT授权；依赖与素材说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。
+开源基础代码采用 [MIT 许可证](LICENSE)。EDR二进制组件不在MIT授权范围，遵循 [EDR组件许可](Binaries/EDR-LICENSE.txt)；实现源码不随仓库发布。Sparkle、SHARP、PlayCanvas、OOOSplat及第三方音频遵循各自许可，不纳入本项目的MIT授权；依赖与素材说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。
+
+
+## EDR 组件与构建
+
+源码构建使用随仓库提供的二进制组件，无需私有源码。发布边界与维护流程见 [分发说明](docs/DISTRIBUTION.md)。

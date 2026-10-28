@@ -4,7 +4,7 @@ import MetalKit
 import os
 import SwiftUI
 
-/// Ordinary Display P3 output; redraws only when image, light or size changes.
+/// Color-managed output; redraws when image, light, size or EDR capacity changes.
 struct OpticalDisplay: NSViewRepresentable {
     var preview: PhotoPreview? = nil
     var image: CGImage? = nil
@@ -12,10 +12,11 @@ struct OpticalDisplay: NSViewRepresentable {
     var transmission: Double = 1
     var flare: Double = 0
     var brightness: Double = 1
+    var edrEnabled = false
     func makeNSView(context: Context) -> OpticalMetalView { OpticalMetalView() }
     func updateNSView(_ view: OpticalMetalView, context: Context) {
         view.set(preview: preview, image: image, transmission: transmission,
-                 flare: flare, brightness: brightness, loupe: loupe)
+                 flare: flare, brightness: brightness, loupe: loupe, edrEnabled: edrEnabled)
     }
 }
 
@@ -43,11 +44,37 @@ struct OpticalRetryBudget {
     }
 }
 
+struct OpticalFrameGate {
+    private(set) var inFlight = false
+    private(set) var needsRedraw = false
+
+    mutating func deferLatestFrame() -> Bool {
+        guard inFlight else { return false }
+        needsRedraw = true
+        return true
+    }
+
+    mutating func begin() {
+        inFlight = true
+    }
+
+    mutating func finish() -> Bool {
+        inFlight = false
+        defer { needsRedraw = false }
+        return needsRedraw
+    }
+}
+
+enum OpticalPresentationPolicy {
+    static func waitsForScheduling(edrLoupe: Bool) -> Bool { !edrLoupe }
+}
+
 final class OpticalMetalView: MTKView {
     static let gpu = MTLCreateSystemDefaultDevice()
     private static let queue = gpu?.makeCommandQueue()
     private static let renderer: CIContext? = gpu.map { CIContext(mtlDevice: $0, options: [
-        .workingColorSpace: PhotoOptics.blendSpace, .cacheIntermediates: false]) }
+        .workingColorSpace: PhotoOptics.linearSpace, .cacheIntermediates: false]) }
+    private static let edrRenderer = PhotoOptics.edrRenderer
     private static let pending = NSHashTable<OpticalMetalView>.weakObjects()
     private static var scheduled = false
     private static let log = Logger(subsystem: "local.ourlighttable.desktop", category: "OpticalDisplay")
@@ -58,10 +85,14 @@ final class OpticalMetalView: MTKView {
     private var preview: PhotoPreview?
     private var image: CGImage?
     private(set) var loupe: LoupeDisplayInput?
-    private lazy var loupeRenderer = LoupeRenderer()
+    private let loupeTextureCache: LoupeTextureCache?
+    private lazy var loupeRenderer = LoupeRenderer(textureCache: loupeTextureCache)
     private var transmission = 1.0
     private var flare = 0.0
     private var brightness = 1.0
+    private var edrEnabled = false
+    private let headroomProvider: (NSScreen?) -> Double
+    private var currentEDRHeadroom = 1.0
 
     // Cache the finished display pixels. Animation never reads this texture
     // back into Core Image, so every light state has the same orientation.
@@ -77,6 +108,7 @@ final class OpticalMetalView: MTKView {
     private var retryToken = 0
     private var exhaustedRevision: Int?
     private var drawnSize = CGSize.zero
+    private var edrLoupeFrameGate = OpticalFrameGate()
 
     private struct CacheParams: Equatable {
         let source: ObjectIdentifier
@@ -86,8 +118,10 @@ final class OpticalMetalView: MTKView {
         let boosted: ObjectIdentifier
         let transmitted: Bool
         let brightness: Double
+        let edrEnabled: Bool
+        let edrHeadroom: Double
 
-        init?(preview: PhotoPreview?, brightness: Double) {
+        init?(preview: PhotoPreview?, brightness: Double, edrEnabled: Bool, edrHeadroom: Double) {
             guard let preview else { return nil }
             source = ObjectIdentifier(preview.source)
             lit = ObjectIdentifier(preview.lit)
@@ -96,13 +130,20 @@ final class OpticalMetalView: MTKView {
             boosted = ObjectIdentifier(preview.boosted)
             transmitted = preview.transmitted
             self.brightness = brightness
+            self.edrEnabled = edrEnabled
+            self.edrHeadroom = edrHeadroom
         }
     }
 
     override var isOpaque: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    init() {
+    init(loupeTextureCache: LoupeTextureCache? = .shared,
+         headroomProvider: @escaping (NSScreen?) -> Double = {
+             Double($0?.maximumExtendedDynamicRangeColorComponentValue ?? 1)
+         }) {
+        self.loupeTextureCache = loupeTextureCache
+        self.headroomProvider = headroomProvider
         super.init(frame: .zero, device: Self.gpu)
         colorPixelFormat = .bgra8Unorm
         colorspace = PhotoOptics.blendSpace
@@ -114,8 +155,29 @@ final class OpticalMetalView: MTKView {
         (layer as? CAMetalLayer)?.isOpaque = false
         (layer as? CAMetalLayer)?.presentsWithTransaction = true
         (layer as? CAMetalLayer)?.wantsExtendedDynamicRangeContent = false
+        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged(_:)),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged(_:)),
+            name: NSWindow.didChangeScreenNotification, object: nil)
     }
     required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func screenParametersChanged(_ notification: Notification) {
+        if let changedWindow = notification.object as? NSWindow, changedWindow !== window { return }
+        if refreshEDRHeadroom() { needsDisplay = true }
+    }
+
+    @discardableResult
+    private func refreshEDRHeadroom() -> Bool {
+        let headroom = edrEnabled ? PhotoOptics.boundedEDRHeadroom(headroomProvider(window?.screen)) : 1
+        guard headroom != currentEDRHeadroom else { return false }
+        currentEDRHeadroom = headroom
+        invalidateCache()
+        beginNewInput()
+        return true
+    }
 
     private func invalidateCache() {
         cacheGeneration += 1
@@ -170,12 +232,22 @@ final class OpticalMetalView: MTKView {
     }
 
     func set(preview: PhotoPreview?, image: CGImage?, transmission: Double,
-             flare: Double, brightness: Double, loupe: LoupeDisplayInput? = nil) {
+             flare: Double, brightness: Double, loupe: LoupeDisplayInput? = nil,
+             edrEnabled: Bool = false) {
+        let edrChanged = self.edrEnabled != edrEnabled
+        if edrChanged {
+            self.edrEnabled = edrEnabled
+            colorPixelFormat = edrEnabled ? .rgba16Float : .bgra8Unorm
+            colorspace = edrEnabled ? PhotoOptics.linearSpace : PhotoOptics.blendSpace
+            (layer as? CAMetalLayer)?.wantsExtendedDynamicRangeContent = edrEnabled
+            (layer as? CAMetalLayer)?.colorspace = colorspace
+            invalidateCache()
+        }
         let sourceChanged = self.preview?.source !== preview?.source || self.preview?.lit !== preview?.lit ||
             self.preview?.dark !== preview?.dark || self.preview?.boosted !== preview?.boosted ||
             self.preview?.flare !== preview?.flare || self.preview?.transmitted != preview?.transmitted ||
             self.image !== image || self.brightness != brightness || self.loupe != loupe
-        let changed = sourceChanged || self.transmission != transmission || self.flare != flare
+        let changed = sourceChanged || self.transmission != transmission || self.flare != flare || edrChanged
         if sourceChanged { invalidateCache() }
 
         self.preview = preview; self.image = image; self.transmission = transmission
@@ -215,6 +287,7 @@ final class OpticalMetalView: MTKView {
         weak var view: OpticalMetalView?
         let revision: Int
         let size: CGSize
+        let edrLoupe: Bool
     }
 
     private enum LiveEncode {
@@ -257,8 +330,11 @@ final class OpticalMetalView: MTKView {
             case .idle: continue
             case .failed(let reason): view.noteDrawFailure(reason)
             case .encoded(let drawable):
+                let edrLoupe = view.edrEnabled && view.loupe != nil
+                if edrLoupe { view.edrLoupeFrameGate.begin() }
                 drawables.append(drawable)
-                encoded.append(EncodedSurface(view: view, revision: view.retry.revision, size: view.drawableSize))
+                encoded.append(EncodedSurface(view: view, revision: view.retry.revision,
+                                              size: view.drawableSize, edrLoupe: edrLoupe))
             }
         }
         guard !drawables.isEmpty else { return }
@@ -266,25 +342,41 @@ final class OpticalMetalView: MTKView {
             let succeeded = completed.status == .completed
             DispatchQueue.main.async {
                 for surface in encoded {
+                    guard let view = surface.view else { continue }
+                    if surface.edrLoupe {
+                        let changedWhileRendering = view.edrLoupeFrameGate.finish()
+                        if changedWhileRendering || view.retry.revision != surface.revision ||
+                            view.drawableSize != surface.size {
+                            view.needsDisplay = true
+                        }
+                    }
                     // A newer input or drawable size owns the view's retry state now.
-                    guard let view = surface.view, view.retry.revision == surface.revision,
+                    guard view.retry.revision == surface.revision,
                           view.drawableSize == surface.size else { continue }
                     if succeeded { view.noteDrawSuccess() } else { view.noteDrawFailure("GPU command buffer failed") }
                 }
             }
         }
-        // Transaction-synchronized layers require scheduled GPU work before present.
-        buffer.commit()
-        buffer.waitUntilScheduled()
-        // Skip errors already known before presentation. Scheduling is not
-        // completion; later GPU failures recover through the completed handler.
-        guard buffer.status != .error else { return }
-        for drawable in drawables { drawable.present() }
+        let hasEDRLoupe = encoded.contains(where: \.edrLoupe)
+        if OpticalPresentationPolicy.waitsForScheduling(edrLoupe: hasEDRLoupe) {
+            // Transaction-synchronized table surfaces retain their coordinated presentation.
+            buffer.commit()
+            buffer.waitUntilScheduled()
+            guard buffer.status != .error else { return }
+            for drawable in drawables { drawable.present() }
+        } else {
+            // EDR loupe graphs are expensive to schedule. Queue presentation
+            // before commit so pointer input never waits for GPU scheduling on the main thread.
+            for drawable in drawables { drawable.present() }
+            buffer.commit()
+        }
     }
 
     private func prepareDraw() -> Bool {
+        refreshEDRHeadroom()
         guard drawableSize.width > 0, drawableSize.height > 0,
               preview != nil || image != nil || loupe != nil else { return false }
+        if edrEnabled, loupe != nil, edrLoupeFrameGate.deferLatestFrame() { return false }
         if drawableSize != drawnSize { drawnSize = drawableSize; beginNewInput() }
         return true
     }
@@ -301,8 +393,11 @@ final class OpticalMetalView: MTKView {
     /// fully rendered stable frame; do not generate a second image on first draw.
     @discardableResult
     func encode(into texture: MTLTexture, commandBuffer buffer: MTLCommandBuffer, renderer: CIContext) -> Bool {
+        refreshEDRHeadroom()
+        let headroom = currentEDRHeadroom
         let isStable = flare == 0 && transmission == 1
-        let params = CacheParams(preview: preview, brightness: brightness)
+        let params = CacheParams(preview: preview, brightness: brightness,
+                                 edrEnabled: edrEnabled, edrHeadroom: headroom)
         let canCache = isStable && loupe == nil && params != nil
         if canCache, let cached = cachedStableTexture, cachedStableParams == params,
            cached.width == texture.width, cached.height == texture.height,
@@ -314,11 +409,12 @@ final class OpticalMetalView: MTKView {
         }
 
         let size = CGSize(width: texture.width, height: texture.height)
-        guard let input = composedInput(), let fitted = fitted(input, to: size) else { return false }
+        guard let input = composedInput(edrHeadroom: headroom), let fitted = fitted(input, to: size) else { return false }
         let destination = CIRenderDestination(mtlTexture: texture, commandBuffer: buffer)
-        destination.colorSpace = PhotoOptics.blendSpace
+        destination.colorSpace = edrEnabled ? PhotoOptics.linearSpace : PhotoOptics.blendSpace
         destination.isFlipped = true
-        do { _ = try renderer.startTask(toRender: fitted, to: destination) }
+        let activeRenderer = edrEnabled ? (Self.edrRenderer ?? renderer) : renderer
+        do { _ = try activeRenderer.startTask(toRender: fitted, to: destination) }
         catch { return false }
 
         if canCache, !cacheBuildInFlight,
@@ -361,15 +457,21 @@ final class OpticalMetalView: MTKView {
 
     /// Read the latest immutable input at encoding time.
     func composedInput() -> CIImage? {
+        refreshEDRHeadroom()
+        return composedInput(edrHeadroom: currentEDRHeadroom)
+    }
+
+    private func composedInput(edrHeadroom: Double) -> CIImage? {
         if let loupe {
             let scene = loupe.scene
             return loupeRenderer.composite(photos: scene.photos, point: scene.point,
                 panelBounds: scene.panelBounds, diameter: loupe.diameter, magnification: loupe.magnification,
                 displayScale: loupe.displayScale, transmission: scene.transmission, flare: scene.flare,
-                brightness: scene.brightness, viewport: loupe.viewport, refractionScale: loupe.refractionScale)
+                brightness: scene.brightness, viewport: loupe.viewport, refractionScale: loupe.refractionScale,
+                edrEnabled: scene.edrEnabled, edrHeadroom: edrHeadroom)
         } else if let preview {
             return PhotoOptics.composite(preview: preview, transmission: transmission,
-                flare: flare, brightness: brightness)
+                flare: flare, brightness: brightness, edrEnabled: edrEnabled, edrHeadroom: edrHeadroom)
         } else if let image {
             return CIImage(cgImage: image)
         }

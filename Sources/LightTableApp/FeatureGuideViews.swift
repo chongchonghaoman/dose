@@ -36,19 +36,32 @@ struct FeatureGuideWelcome: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("观片台已更新").font(.system(size: 21, weight: .semibold))
-                    Text("v\(version) · 回到过去")
+                    Text("v\(version) · 全新背光 EDR")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }.padding(.bottom, 24)
-            feature("clock.arrow.circlepath", title: "让照片从黑暗中浮现",
-                    text: "点击右上角「回到过去」，从下方底栏拖一张照片到播放区。\n本机生成完成后，场景会从黑屏逐粒显现。")
-            Divider().padding(.vertical, 19)
-            feature("hand.draw", title: "在照片附近慢慢看",
-                    text: "左键拖动小幅旋转，右键拖动平移，滚轮或触控板捏合缩放。\n双击复位，按 Esc 返回观片台。")
-            Divider().padding(.vertical, 19)
-            feature("arrow.down.circle", title: "首次使用需要准备",
-                    text: "首次生成会联网下载运行环境和模型，后续复用。\n照片在本机处理；低内存电脑会使用更慢的生成方式。",
-                    note: "SHARP 模型仅限非商业科学研究，具体限制见随附模型许可。")
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sun.max.fill").accessibilityHidden(true)
+                    Text("背光 EDR").fontWeight(.semibold)
+                }
+                .font(.system(size: 13)).foregroundStyle(Color(red: 0.57, green: 0.32, blue: 0.09))
+                Text("透光更鲜明，层次依然清晰。")
+                    .font(.system(size: 23, weight: .semibold))
+                    .accessibilityAddTraits(.isHeader)
+                Text("亮部更通透，高光保留层次；暗部保持深度，不发灰。\n看见照片的透光感，也留住细节、色彩与对比度。")
+                    .font(.system(size: 13)).foregroundStyle(.secondary).lineSpacing(5)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading).padding(20)
+            .background(Color(red: 0.98, green: 0.94, blue: 0.86), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color(red: 0.73, green: 0.51, blue: 0.20).opacity(0.16)))
+            .padding(.bottom, 24)
+            feature("keyboard", title: "随时切换，凑近对照",
+                    text: "点击顶部「背光 EDR」，或按 E 切换。\n按住空格凑近照片时，也能按 E 对照观看。")
+            Divider().padding(.vertical, 18)
+            feature("slider.horizontal.3", title: "亮度随模式切换",
+                    text: "EDR 亮度固定为 120%，右侧滑块平滑收起。\n回到普通模式，滑块展开并恢复之前的亮度。")
             HStack(spacing: 10) {
                 Spacer()
                 Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle(primary: true))

@@ -27,6 +27,36 @@ struct DropChecks {
         }
         let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
         let original = try file("originals/one.png", image)
+        let fixedEDR = TableModel(restore: false)
+        try check(fixedEDR.backlightEDREnabled && fixedEDR.lampBrightness == 1.2,
+                  "new table defaults to fixed 120 percent EDR brightness")
+        for attempted in [0.1, 1.0, 1.6, Double.nan] {
+            fixedEDR.lampBrightness = attempted
+            try check(fixedEDR.lampBrightness == 1.2,
+                      "EDR ignores brightness adjustment while unlit: \(attempted)")
+        }
+        fixedEDR.backlightEDREnabled = false
+        try check(fixedEDR.lampBrightness == 1.0,
+                  "ordinary mode retains its default 100 percent brightness")
+        fixedEDR.lampBrightness = 0.72
+        try check(fixedEDR.lampBrightness == 0.72, "ordinary mode remains adjustable")
+        fixedEDR.isLit = true
+        let fixedEDRStart = fixedEDR.lightStartedAt
+        for _ in 0..<2 {
+            fixedEDR.backlightEDREnabled = true
+            fixedEDR.lampBrightness = 1.6
+            try check(fixedEDR.lampBrightness == 1.2 && fixedEDR.lightStartedAt == fixedEDRStart,
+                      "switching to EDR locks 120 percent without restarting the lamp")
+            fixedEDR.backlightEDREnabled = false
+            try check(fixedEDR.lampBrightness == 0.72 && fixedEDR.lightStartedAt == fixedEDRStart,
+                      "leaving EDR restores the previous ordinary brightness and lamp clock")
+        }
+        fixedEDR.backlightEDREnabled = true
+        fixedEDR.isLit = false
+        fixedEDR.lampBrightness = TableModel.defaultLampBrightness
+        fixedEDR.isLit = true
+        try check(fixedEDR.lampBrightness == 1.2,
+                  "turning the lamp off and on cannot reset fixed EDR brightness")
         try check(TablePreviewSizing.maxPixel(size: CGSize(width: 110, height: 74), displayScale: 2) == 256,
                   "small Retina table photos request 256 pixels instead of 2200")
         try check(TablePreviewSizing.maxPixel(size: CGSize(width: 110, height: 170), displayScale: 2) == 384,
@@ -220,6 +250,7 @@ struct DropChecks {
         // Lighting is display state: toggling it must not reframe, rearrange,
         // re-import, or restart its animation when another slide is placed.
         let lighting = TableModel(restore: false)
+        lighting.backlightEDREnabled = false
         await lighting.importURLs([original, external])
         lighting.place(original, x: 0.24, y: 0.73)
         let litFirstID = lighting.selectedID!
@@ -324,6 +355,7 @@ struct DropChecks {
             fitModel.update(fitModel.selectedID!) { $0.width = 0.8; $0.angle = 15 }
         }
         fitModel.boardSize = CGSize(width: 840, height: 330)
+        fitModel.backlightEDREnabled = false
         fitModel.isLit = true; fitModel.loupeEnabled = true; fitModel.lampBrightness = 1.4; fitModel.zoom = 1.5
         let fitPhotos = fitModel.photos, fitSelection = fitModel.selectedID, lightStart = fitModel.lightStartedAt
         fitModel.pan = CGPoint(x: -4500, y: 3400)

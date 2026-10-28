@@ -33,6 +33,16 @@ struct ContentView: View {
     @State private var guideWindowReady = false
     @State private var guideBounds = CGRect.zero
     @State private var returnToPast = ReturnToPastSession.shared
+    private var messagePresented: Binding<Bool> {
+        Binding(get: { model.message != nil }, set: { visible in
+            if !visible { model.message = nil }
+        })
+    }
+
+    private var tableKeyboardEnabled: Bool {
+        !model.isPreparingStartup && !model.slideshowMode && !model.returnToPastMode &&
+        flight == nil && !model.albumEditorPresented && !featureGuide.welcomeVisible && model.message == nil
+    }
 
     init(model: TableModel, loupe: LoupeExperience? = nil) {
         self.model = model
@@ -87,15 +97,7 @@ struct ContentView: View {
             loupe.scene = scene
             if scene == nil { loupe.cancel() }
         }
-        .overlay(alignment: .topLeading) {
-            if let flight {
-                SleeveFlightView(flight: flight, preview: model.preparedTablePreviews[flight.photo.url]?.viewing(transmitted: model.transmissionEnabled),
-                                 isLit: model.isLit, brightness: model.lampBrightness, reduceMotion: reduceMotion)
-                FilmSleeveSurface().frame(width: flight.sleeve.width, height: flight.sleeve.height)
-                    .position(x: flight.sleeve.midX, y: flight.sleeve.midY)
-                    .allowsHitTesting(false).accessibilityHidden(true)
-            }
-        }
+        .overlay(alignment: .topLeading) { flightOverlay }
         .overlay {
             if !model.slideshowMode && !model.isPreparingStartup && !model.returnToPastMode { LoupeOverlay(experience: loupe, canvasFrame: canvasFrame) }
         }
@@ -130,69 +132,28 @@ struct ContentView: View {
                 .onAppear { featureGuide.didPresent(in: guideWindowID) }
         }
         .background {
-            LoupeKeyboard(enabled: !model.isPreparingStartup && !model.slideshowMode && !model.returnToPastMode && model.loupeEnabled && flight == nil && !model.albumEditorPresented && !featureGuide.welcomeVisible,
+            LoupeKeyboard(enabled: tableKeyboardEnabled,
                           pressed: { loupe.press() },
                           released: { loupe.release(reduceMotion: reduceMotion) },
                           cancelled: { loupe.cancel() },
                           cycleMagnification: { loupe.cycleMagnification() },
+                          loupeEnabled: model.loupeEnabled,
+                          toggleEDR: { model.backlightEDREnabled.toggle() },
                           availabilityChanged: { loupe.cursorEnabled = $0 }).frame(width: 0, height: 0)
         }
-        .task(id: flight?.phase == .dragging) {
-            guard flight?.phase == .dragging else { return }
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
-                guard let point = flightPointer, boardFrame.contains(point) else { continue }
-                let velocity = TableViewport.edgeVelocity(x: point.x - boardFrame.minX, y: point.y - boardFrame.minY,
-                    width: boardFrame.width, height: boardFrame.height)
-                if velocity.x != 0 || velocity.y != 0 {
-                    model.panBy(CGSize(width: velocity.x * 0.016, height: velocity.y * 0.016))
-                }
-            }
-        }
-        .task(id: entryPreparationID) {
-            guard let run = entryPreparationID else { return }
-            await prepareSlideshow(run)
-        }
-        .onChange(of: model.loupeEnabled) { _, enabled in if !enabled { loupe.cancel() } }
-        .onChange(of: model.activeTrayID) { _, _ in
-            flight = nil; flightPointer = nil; cancelledPull = false; releaseFlightCursor()
-            entryPreparationID = nil
-            slideshowTray = SlideshowTraySnapshot()
-        }
-        .onChange(of: model.slideshowMode) { _, active in
-            if active { featureGuide.finish(in: guideWindowID); model.returnToPastMode = false; returnToPast.close() }
-            loupe.cancel()
-            flight = nil; flightPointer = nil; cancelledPull = false; releaseFlightCursor()
-            if !active {
-                entryPreparationID = nil
-                entryComplete = false; entryPhotos = []
-            }
-        }
-        .onExitCommand {
-            if model.returnToPastMode {
-                model.returnToPastMode = false; returnToPast.close(); return
-            }
-            loupe.cancel(); returnToSleeve()
-            if !model.slideshowMode && !model.albumEditorPresented { model.setSelection([]) }
-        }
+        .task(id: flight?.phase == .dragging) { await autoPanDraggedPhoto() }
+        .task(id: entryPreparationID) { await prepareSlideshowTask() }
+        .onChange(of: model.loupeEnabled) { _, enabled in handleLoupeEnabledChange(enabled) }
+        .onChange(of: model.activeTrayID) { _, _ in handleActiveTrayChange() }
+        .onChange(of: model.slideshowMode) { _, active in handleSlideshowModeChange(active) }
+        .onExitCommand { handleExitCommand() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in returnToSleeve() }
-        .onDisappear {
-            returnToPast.close()
-            featureGuide.finish(in: guideWindowID)
-            entryPreparationID = nil
-            loupe.cancel(); flight = nil; cancelledPull = false; releaseFlightCursor()
-        }
+        .onDisappear { handleDisappear() }
         .background(Color(white: 0.025))
         .sheet(isPresented: $model.albumEditorPresented) { AlbumEditor(model: model) }
-        .onChange(of: model.albumEditorPresented) { _, opened in
-            if opened { loupe.cancel(); featureGuide.finish(in: guideWindowID); returnToPast.close() }
-        }
-        .onChange(of: model.returnToPastMode) { _, active in
-            loupe.cancel(); returnToSleeve()
-            if active { featureGuide.finish(in: guideWindowID); entryPreparationID = nil }
-            else { returnToPast.close() }
-        }
-        .alert("观片台", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+        .onChange(of: model.albumEditorPresented) { _, opened in handleAlbumEditorChange(opened) }
+        .onChange(of: model.returnToPastMode) { _, active in handleReturnToPastModeChange(active) }
+        .alert("观片台", isPresented: messagePresented) {
             Button("好") { model.message = nil }
         } message: { Text(model.message ?? "") }
         .disabled(model.isPreparingStartup)
@@ -208,16 +169,117 @@ struct ContentView: View {
     }
 
     private var guideStep: Int? { featureGuide.step(in: guideWindowID) }
+    @ViewBuilder
+    private var flightOverlay: some View {
+        if let flight {
+            let preview = model.preparedTablePreviews[flight.photo.url]?.viewing(transmitted: model.transmissionEnabled)
+            SleeveFlightView(flight: flight, preview: preview, isLit: model.isLit,
+                             brightness: model.lampBrightness, edrEnabled: model.backlightEDREnabled,
+                             reduceMotion: reduceMotion)
+            FilmSleeveSurface().frame(width: flight.sleeve.width, height: flight.sleeve.height)
+                .position(x: flight.sleeve.midX, y: flight.sleeve.midY)
+                .allowsHitTesting(false).accessibilityHidden(true)
+        }
+    }
+
     private var guideMenuAvailable: Bool {
         featureGuide.available && !model.isPreparingStartup && !model.slideshowMode && !model.returnToPastMode && !model.albumEditorPresented && model.message == nil && flight == nil
     }
     private var guideReady: Bool { guideWindowReady && guideMenuAvailable && featureGuide.phase == .idle }
 
+    private func handleExitCommand() {
+        if model.returnToPastMode {
+            model.returnToPastMode = false
+            returnToPast.close()
+            return
+        }
+        loupe.cancel()
+        returnToSleeve()
+        if !model.slideshowMode && !model.albumEditorPresented { model.setSelection([]) }
+    }
+
+    private func autoPanDraggedPhoto() async {
+        guard flight?.phase == .dragging else { return }
+        while !Task.isCancelled {
+            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+            guard let point = flightPointer, boardFrame.contains(point) else { continue }
+            let velocity = TableViewport.edgeVelocity(x: point.x - boardFrame.minX,
+                y: point.y - boardFrame.minY, width: boardFrame.width, height: boardFrame.height)
+            if velocity.x != 0 || velocity.y != 0 {
+                model.panBy(CGSize(width: velocity.x * 0.016, height: velocity.y * 0.016))
+            }
+        }
+    }
+
+    private func prepareSlideshowTask() async {
+        guard let run = entryPreparationID else { return }
+        await prepareSlideshow(run)
+    }
+
+    private func handleDisappear() {
+        returnToPast.close()
+        featureGuide.finish(in: guideWindowID)
+        entryPreparationID = nil
+        loupe.cancel()
+        flight = nil
+        cancelledPull = false
+        releaseFlightCursor()
+    }
+
+    private func handleReturnToPastModeChange(_ active: Bool) {
+        loupe.cancel()
+        returnToSleeve()
+        if active {
+            featureGuide.finish(in: guideWindowID)
+            entryPreparationID = nil
+        } else {
+            returnToPast.close()
+        }
+    }
+
+    private func handleLoupeEnabledChange(_ enabled: Bool) {
+        if !enabled { loupe.cancel() }
+    }
+
+    private func handleActiveTrayChange() {
+        flight = nil
+        flightPointer = nil
+        cancelledPull = false
+        releaseFlightCursor()
+        entryPreparationID = nil
+        slideshowTray = SlideshowTraySnapshot()
+    }
+
+    private func handleSlideshowModeChange(_ active: Bool) {
+        if active {
+            featureGuide.finish(in: guideWindowID)
+            model.returnToPastMode = false
+            returnToPast.close()
+        }
+        loupe.cancel()
+        flight = nil
+        flightPointer = nil
+        cancelledPull = false
+        releaseFlightCursor()
+        if !active {
+            entryPreparationID = nil
+            entryComplete = false
+            entryPhotos = []
+        }
+    }
+
+    private func handleAlbumEditorChange(_ opened: Bool) {
+        guard opened else { return }
+        loupe.cancel()
+        featureGuide.finish(in: guideWindowID)
+        returnToPast.close()
+    }
+
     private func tools(canvasBounds: CGRect) -> some View {
         HStack(spacing: 9) {
             HStack(spacing: 2) {
                 tool("arrow.up.and.down.and.arrow.left.and.right", "普通指针（A）；⌘点选多张，Shift拖动框选，Delete收回底栏", active: !model.loupeEnabled) { model.loupeEnabled = false }
-                tool("viewfinder.circle", "放大镜（V）；按住空格凑近，松开退回；Tab切换倍率", active: model.loupeEnabled) { model.loupeEnabled.toggle() }
+                tool("viewfinder.circle", "放大镜（V）；按住空格凑近，松开退回；Tab切换倍率；E切换EDR", active: model.loupeEnabled) { model.loupeEnabled.toggle() }
                     .featureGuideTarget(.loupe)
             }.padding(4).background(TableStyle.chrome, in: Capsule())
                 .featureGuideTarget(.tools)
@@ -235,17 +297,29 @@ struct ContentView: View {
                 tool("plus", "放大台面视野") { model.zoomCanvas(by: 1.2) }
             }.padding(4).background(TableStyle.chrome, in: Capsule())
                 .featureGuideTarget(.overview)
-            HStack(spacing: 7) {
-                Image(systemName: "sun.max").font(.system(size: 12))
-                BrightnessSlider(value: $model.lampBrightness, range: 0.1...1.6,
-                                 defaultValue: TableModel.defaultLampBrightness)
-                    .frame(width: 110, height: 22)
-                Text("\(Int(model.lampBrightness * 100))%")
-                    .font(.system(size: 10, design: .monospaced)).monospacedDigit().frame(width: 34)
+            HStack(spacing: 0) {
+                BacklightEDRButton(isOn: $model.backlightEDREnabled)
+                HStack(spacing: 7) {
+                    Image(systemName: "sun.max").font(.system(size: 12))
+                    BrightnessSlider(value: $model.lampBrightness, range: 0.1...1.6,
+                                     defaultValue: TableModel.defaultLampBrightness)
+                        .frame(width: 110, height: 22)
+                    Text("\(Int(model.lampBrightness * 100))%")
+                        .font(.system(size: 10, design: .monospaced)).monospacedDigit().frame(width: 34)
+                }
+                .padding(.horizontal, 12).frame(width: 196, height: 38)
+                .background(TableStyle.chrome, in: Capsule())
+                // Keep the native slider at full size while its outer viewport
+                // retracts toward EDR. Retaining it avoids an insertion flash.
+                .frame(width: model.backlightEDREnabled ? 0 : 196, alignment: .leading)
+                .clipped()
+                .opacity(model.backlightEDREnabled ? 0 : 1)
+                .padding(.leading, model.backlightEDREnabled ? 0 : 9)
+                .disabled(model.backlightEDREnabled)
+                .allowsHitTesting(!model.backlightEDREnabled)
+                .accessibilityHidden(model.backlightEDREnabled)
+                .help("连续调整灯板和胶片的透光亮度；双击滑杆恢复 100%；关灯时可预设")
             }
-            .padding(.horizontal, 12).frame(height: 38)
-            .background(TableStyle.chrome, in: Capsule())
-            .help("连续调整灯板和胶片的透光亮度；双击滑杆恢复 100%；关灯时可预设")
             Button {
                 model.isLit.toggle()
             } label: {
@@ -277,6 +351,7 @@ struct ContentView: View {
             .help("进入回到过去，拖入原始照片生成三维场景")
             .disabled(entryPreparationID != nil)
         }.foregroundStyle(TableStyle.ink)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: model.backlightEDREnabled)
     }
 
     private func tool(_ symbol: String, _ help: String, active: Bool = false, action: @escaping () -> Void) -> some View {
@@ -652,7 +727,8 @@ struct TableCanvas: View {
             let lensItems = sceneItems(viewport: viewport, offset: rect.origin,
                                        orderedIDs: orderedIDs)
             ZStack(alignment: .topLeading) {
-                LampPanel(isLit: model.isLit, targeted: targeted, transmission: light.transmission, flare: light.flare, glow: light.glow, brightness: model.lampBrightness)
+                LampPanel(isLit: model.isLit, targeted: targeted, transmission: light.transmission, flare: light.flare, glow: light.glow, brightness: model.lampBrightness,
+                          edrEnabled: model.backlightEDREnabled)
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .contentShape(Rectangle()).onTapGesture { model.selectedID = nil }
                     .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named("table"))
@@ -727,7 +803,8 @@ struct TableCanvas: View {
             }
             .preference(key: LoupeSceneKey.self, value: lensPoint.map {
                 LoupeSceneInput(photos: lensItems.map(\.photo), point: $0, panelBounds: nil,
-                    transmission: light.transmission, flare: light.flare, brightness: model.lampBrightness)
+                    transmission: light.transmission, flare: light.flare, brightness: model.lampBrightness,
+                    edrEnabled: model.backlightEDREnabled)
             })
             .onPreferenceChange(SlidePresentationKey.self) { livePlacements = $0 }
             .onChange(of: draggingID) { _, id in if id != nil { loupe.cancel() } }
@@ -847,10 +924,11 @@ struct LampPanel: View {
     let flare: Double
     let glow: Double
     let brightness: Double
+    var edrEnabled = false
     var body: some View {
         Rectangle()
             .fill(TableStyle.unlitPanel)
-            .overlay { Color(white: LightResponse.panelWhite(brightness: brightness, flare: flare)).opacity(transmission) }
+            .overlay { Color(white: LightResponse.panelWhite(brightness: brightness, flare: flare, edrEnabled: edrEnabled)).opacity(transmission) }
             .overlay {
                 Rectangle().stroke(.white.opacity(glow * min(1, brightness) * 0.65), lineWidth: 16).blur(radius: 12)
             }
@@ -1081,7 +1159,9 @@ private struct SlideView: View {
     }
 
     private func image(_ preview: PhotoPreview, size: CGSize) -> some View {
-        TransmittedPhoto(preview: preview.viewing(transmitted: model.transmissionEnabled), size: size, transmission: transmission, flare: flare, brightness: model.lampBrightness)
+        TransmittedPhoto(preview: preview.viewing(transmitted: model.transmissionEnabled), size: size,
+            transmission: transmission, flare: flare, brightness: model.lampBrightness,
+            edrEnabled: model.backlightEDREnabled)
     }
 }
 
@@ -1092,6 +1172,7 @@ struct TransmittedPhoto: View {
     let transmission: Double
     let flare: Double
     var brightness: Double = 1
+    var edrEnabled = false
     // Offscreen exports/tests use the CPU-readable path; live windows use Metal.
     var usesMetal = true
 
@@ -1099,7 +1180,7 @@ struct TransmittedPhoto: View {
         Group {
             if usesMetal && OpticalMetalView.gpu != nil {
                 OpticalDisplay(preview: preview, transmission: transmission, flare: flare,
-                    brightness: brightness)
+                    brightness: brightness, edrEnabled: edrEnabled)
             } else { sdrBody }
         }.frame(width: size.width, height: size.height)
     }
@@ -1143,6 +1224,7 @@ struct OpticalLoupe: View {
     let transmission: Double
     var flare: Double = 0
     var brightness: Double = 1
+    var edrEnabled = false
     var contentScale: CGFloat = 1
     var glass = LoupeGlassPose()
     var viewportSize = CGSize(width: LoupeGeometry.diameter, height: LoupeGeometry.diameter)
@@ -1153,9 +1235,10 @@ struct OpticalLoupe: View {
         let center = opticalCenter ?? CGPoint(x: viewportSize.width / 2, y: viewportSize.height / 2)
         ZStack {
             TableStyle.unlitPanel
-            Color(white: LightResponse.panelWhite(brightness: brightness, flare: flare)).opacity(transmission)
+            Color(white: LightResponse.panelWhite(brightness: brightness, flare: flare, edrEnabled: edrEnabled)).opacity(transmission)
             if let live {
-                OpticalDisplay(loupe: live, transmission: transmission)
+                OpticalDisplay(loupe: live, transmission: transmission,
+                               edrEnabled: live.scene.edrEnabled)
                     .frame(width: viewportSize.width, height: viewportSize.height)
                     .scaleEffect(contentScale)
             } else if let image {

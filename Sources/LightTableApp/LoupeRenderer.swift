@@ -9,6 +9,7 @@ struct LoupeSceneInput: Equatable {
     let transmission: Double
     let flare: Double
     let brightness: Double
+    var edrEnabled: Bool = false
 }
 
 /// One immutable snapshot for the live drawable. No asynchronously returned bitmap.
@@ -61,11 +62,14 @@ struct LoupeScenePhoto: Equatable {
 /// annulus; the centre keeps its original detail and pointer alignment.
 final class LoupeRenderer {
     static let shared = LoupeRenderer()
-    private let colorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
-    // Convert tagged original and processed previews to the same display space.
-    // Nonlinear P3 keeps light blending aligned with the SwiftUI table layers.
+    private let textureCache: LoupeTextureCache?
+
+    init(textureCache: LoupeTextureCache? = .shared) {
+        self.textureCache = textureCache
+    }
+    private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private let context = CIContext(options: [.cacheIntermediates: false,
-        .workingColorSpace: CGColorSpace(name: CGColorSpace.displayP3)!])
+        .workingColorSpace: PhotoOptics.linearSpace])
     // A bounded, monotonic radial warp: no torus, foldover, or sampled ring.
     // Keep the central 75% straight, then smoothly change the local scale.
     // The 3.2% displacement cap preserves monotonic radial sampling.
@@ -103,12 +107,14 @@ final class LoupeRenderer {
                 diameter: CGFloat, magnification: CGFloat, displayScale: CGFloat,
                 transmission: Double, flare: Double, brightness: Double,
                 refracts: Bool = true, opticalDiameter: CGFloat? = nil,
-                viewport: CGRect? = nil, refractionScale: CGFloat = 1) -> CGImage? {
+                viewport: CGRect? = nil, refractionScale: CGFloat = 1,
+                panelEDREnabled: Bool = false) -> CGImage? {
         guard let glass = composite(photos: photos, point: point, panelBounds: panelBounds,
             diameter: diameter, magnification: magnification, displayScale: displayScale,
             transmission: transmission, flare: flare, brightness: brightness,
             refracts: refracts, opticalDiameter: opticalDiameter,
-            viewport: viewport, refractionScale: refractionScale) else { return nil }
+            viewport: viewport, refractionScale: refractionScale,
+            panelEDREnabled: panelEDREnabled) else { return nil }
         return context.createCGImage(glass, from: glass.extent, format: .RGBA8, colorSpace: colorSpace)
     }
 
@@ -118,7 +124,9 @@ final class LoupeRenderer {
                    diameter: CGFloat, magnification: CGFloat, displayScale: CGFloat,
                    transmission: Double, flare: Double, brightness: Double,
                    refracts: Bool = true, opticalDiameter: CGFloat? = nil,
-                   viewport: CGRect? = nil, refractionScale: CGFloat = 1) -> CIImage? {
+                   viewport: CGRect? = nil, refractionScale: CGFloat = 1,
+                   edrEnabled: Bool = false, panelEDREnabled: Bool? = nil,
+                   edrHeadroom: Double = 1) -> CIImage? {
         guard diameter > 0, magnification > 0 else { return nil }
         let scale = max(1, min(3, displayScale))
         let pixels = ceil(diameter * scale)
@@ -140,7 +148,8 @@ final class LoupeRenderer {
                                     width: region.width / magnification, height: region.height / magnification)
             .insetBy(dx: -sourcePadding, dy: -sourcePadding)
         let light = min(1, max(0, transmission))
-        let white = LightResponse.panelWhite(brightness: brightness, flare: flare)
+        let white = LightResponse.panelWhite(brightness: brightness, flare: flare,
+                                            edrEnabled: panelEDREnabled ?? edrEnabled)
         let unlit = LightResponse.unlitPanel
         let panel = CIImage(color: CIColor(red: unlit.red * (1 - light) + white * light,
                                            green: unlit.green * (1 - light) + white * light,
@@ -181,8 +190,29 @@ final class LoupeRenderer {
                     scaleX: w / CGFloat(preview.sourceCIImage.extent.width),
                     y: h / CGFloat(preview.sourceCIImage.extent.height))
                     .concatenating(localToLens)
-                film = PhotoOptics.composite(preview: preview, transmission: light, flare: flare,
-                    brightness: brightness, transform: sourceToLens).composited(over: mount)
+                // CGImage and texture inputs apply edge coverage differently.
+                // Keep the original path whenever the sampled area touches a
+                // photo boundary; reuse only the fully covered source interior.
+                let insetX = 2 * w / preview.sourceCIImage.extent.width
+                let insetY = 2 * h / preview.sourceCIImage.extent.height
+                let interior = textureCache != nil && edrEnabled && light == 1 && flare == 0 &&
+                               [CGPoint(x: sourceViewport.minX, y: sourceViewport.minY),
+                                CGPoint(x: sourceViewport.maxX, y: sourceViewport.minY),
+                                CGPoint(x: sourceViewport.minX, y: sourceViewport.maxY),
+                                CGPoint(x: sourceViewport.maxX, y: sourceViewport.maxY)].allSatisfy { p in
+                    let x = p.x - item.center.x, y = p.y - item.center.y
+                    return abs(c * x + s * y) < w / 2 - insetX &&
+                           abs(-s * x + c * y) < h / 2 - insetY
+                }
+                if interior, let cached = textureCache?.image(preview: preview, transmission: light,
+                    flare: flare, brightness: brightness, edrEnabled: edrEnabled,
+                    edrHeadroom: edrHeadroom) {
+                    film = cached.transformed(by: sourceToLens).composited(over: mount)
+                } else {
+                    film = PhotoOptics.composite(preview: preview, transmission: light, flare: flare,
+                        brightness: brightness, transform: sourceToLens,
+                        edrEnabled: edrEnabled, edrHeadroom: edrHeadroom).composited(over: mount)
+                }
             } else if let thumbnail = item.thumbnail {
                 let sourceToLens = CGAffineTransform(
                     scaleX: w / CGFloat(thumbnail.width), y: h / CGFloat(thumbnail.height))

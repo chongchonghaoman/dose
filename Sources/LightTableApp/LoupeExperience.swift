@@ -274,6 +274,7 @@ private struct LoupeSampledImage: View {
     var body: some View {
         OpticalLoupe(image: raster.image, live: OpticalMetalView.gpu == nil ? nil : input,
                      transmission: input.scene.transmission, flare: input.scene.flare, brightness: input.scene.brightness,
+                     edrEnabled: input.scene.edrEnabled,
                      contentScale: contentScale, glass: glass)
             .onChange(of: input, initial: true) { _, value in
                 if OpticalMetalView.gpu == nil { raster.request(LoupeRasterRequest(value)) }
@@ -394,6 +395,8 @@ struct LoupeKeyboard: NSViewRepresentable {
     let released: () -> Void
     let cancelled: () -> Void
     let cycleMagnification: () -> Void
+    var loupeEnabled = true
+    var toggleEDR: (() -> Void)? = nil
     var availabilityChanged: (Bool) -> Void = { _ in }
 
     func makeNSView(context: Context) -> MonitorView { MonitorView() }
@@ -402,6 +405,8 @@ struct LoupeKeyboard: NSViewRepresentable {
         view.enabled = enabled; view.pressed = pressed
         view.released = released; view.cancelled = cancelled
         view.cycleMagnification = cycleMagnification
+        view.toggleEDR = toggleEDR
+        view.loupeEnabled = loupeEnabled
         if !enabled { view.reset() }
     }
     static func dismantleNSView(_ view: MonitorView, coordinator: ()) { view.stop() }
@@ -410,14 +415,22 @@ struct LoupeKeyboard: NSViewRepresentable {
         var enabled = false {
             didSet { updateAvailability() }
         }
+        var loupeEnabled = true {
+            didSet {
+                if !loupeEnabled { resetLoupe() }
+                updateAvailability()
+            }
+        }
         var pressed: (() -> Bool)?
         var released: (() -> Void)?
         var cancelled: (() -> Void)?
         var cycleMagnification: (() -> Void)?
+        var toggleEDR: (() -> Void)?
         var availabilityChanged: ((Bool) -> Void)?
         private var windowActive = false
         private var held = false
         private var tabHeld = false
+        private var edrKeyCode: UInt16?
         private var monitor: Any?
         private var resignObserver: NSObjectProtocol?
         private var becomeObserver: NSObjectProtocol?
@@ -446,14 +459,24 @@ struct LoupeKeyboard: NSViewRepresentable {
         }
 
         func handle(_ event: NSEvent) -> NSEvent? {
-            guard event.window === window, event.keyCode == 49 || event.keyCode == 48 else { return event }
+            guard event.window === window else { return event }
             if event.type == .keyUp {
                 if event.keyCode == 49, held { held = false; released?(); return nil }
                 if event.keyCode == 48, tabHeld { tabHeld = false; return nil }
+                if event.keyCode == edrKeyCode { edrKeyCode = nil; return nil }
             }
             guard event.type == .keyDown, enabled, window?.isKeyWindow == true,
+                  window?.attachedSheet == nil, NSApp.modalWindow == nil,
                   window?.firstResponder is NSTextView == false,
                   event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else { return event }
+            if event.keyCode == edrKeyCode { return nil }
+            if event.charactersIgnoringModifiers?.lowercased() == "e" {
+                guard !event.isARepeat, let toggleEDR else { return event }
+                edrKeyCode = event.keyCode
+                toggleEDR()
+                return nil
+            }
+            guard loupeEnabled, event.keyCode == 49 || event.keyCode == 48 else { return event }
             if event.keyCode == 48 {
                 if tabHeld { return nil }
                 guard !event.isARepeat, let cycleMagnification else { return event }
@@ -467,8 +490,9 @@ struct LoupeKeyboard: NSViewRepresentable {
             return nil
         }
 
-        func reset() { held = false; tabHeld = false; cancelled?() }
-        private func updateAvailability() { availabilityChanged?(enabled && windowActive) }
+        private func resetLoupe() { held = false; tabHeld = false; cancelled?() }
+        func reset() { edrKeyCode = nil; resetLoupe() }
+        private func updateAvailability() { availabilityChanged?(enabled && loupeEnabled && windowActive) }
         func stop() {
             windowActive = false
             updateAvailability()

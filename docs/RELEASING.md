@@ -24,7 +24,7 @@ v0.1.65 内没有更新组件，现有用户必须手动安装带更新功能的
 
 ## 发布（用户批准后手动进行）
 
-1. 提交并推送 `LightTable-public` 的对应源码；不得合并本机开发库的私人历史。源码需包含对应 `VERSION`、`Package.resolved`、更新公钥和说明。
+1. 使用维护者私有工作区的公开导出工具生成候选，经检查后同步到本仓库；禁止整目录复制开发库或合并私人历史。提交前运行 `python3 scripts/check-source-boundary.py --tree . --git-index .`。源码包含对应 `VERSION`、`Package.resolved`、更新公钥、说明和带单独许可的EDR二进制，不能包含EDR实现或研究资料。
 2. 在 GitHub 创建相同版本号的 **Draft Release**，标签如 `v0.1.70`，指向刚提交的源码。
 3. 上传上述四个文件后再一次性发布为正式 Release，并标记 Latest。不要先发布空Release，以免更新源暂时缺失；不要勾选预发布。
 4. 从一份已安装的旧更新版使用「检查更新…」验收下载、安装及重启，并确认原图库布局仍在。首次v0.1.70没有已发布的旧更新版；可在下一次正式更新时完成这项线上验证。
@@ -47,3 +47,13 @@ Fork项目应建立自己的仓库、更新源和签名密钥，不向本项目�
 - https://sparkle-project.org/documentation/programmatic-setup/
 - https://sparkle-project.org/documentation/customization/
 - https://sparkle-project.org/documentation/publishing/
+
+
+## EDR 私有源码边界（2026-10-28）
+
+后续EDR版本必须通过私有工作区的公开导出清单生成候选，禁止整目录同步开发库或合并私人Git历史。公开仓库只接收调用接口、预编译二进制及其单独许可；EDR实现、参数研究和数值参考测试保留私有。发布准备已接入源码及ZIP检查。
+
+本地已启用Distribution/hooks；换机器先运行`git config core.hooksPath Distribution/hooks`。提交前检查实际暂存区，推送前检查待推送提交历史。完整新版源码候选在私有工作区生成和验证，未经发布授权不提交、推送或上传。
+
+
+维护者须启用提交/推送检查：`git config core.hooksPath Distribution/hooks`。公开基础测试使用`swift test`及仓库内的交互检查；私有光学数值测试由维护者在私有开发区执行，不进入公开源码包。

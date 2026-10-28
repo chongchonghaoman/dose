@@ -1,4 +1,5 @@
 import AppKit
+import LightTableEDR
 import SwiftUI
 import UniformTypeIdentifiers
 import LightTableCore
@@ -18,6 +19,7 @@ struct TrayPhotoSelection: Equatable {
 @Observable
 final class TableModel {
     static let defaultLampBrightness = 1.0
+    static let edrLampBrightness = LTEDRBrightness()
     private(set) var trays = [PhotoTray(name: "底栏 1")]
     private var selectedTrayID: UUID?
     private(set) var selectedTrayPhoto: TrayPhotoSelection?
@@ -75,7 +77,17 @@ final class TableModel {
     var worldSize: CGSize { referenceSize ?? (boardSize.width > 1 ? boardSize : CGSize(width: 1180, height: 550)) }
     var viewport: TableViewport { TableViewport(scale: zoom, offsetX: pan.x, offsetY: pan.y) }
     private(set) var imageAspects: [URL: Double] = [:]
-    var lampBrightness = TableModel.defaultLampBrightness
+    private var ordinaryLampBrightness = TableModel.defaultLampBrightness
+    var backlightEDREnabled = true
+    // Every display path reads this value; switching EDR never overwrites the
+    // user's ordinary-mode setting or allows a stale slider event to change it.
+    var lampBrightness: Double {
+        get { backlightEDREnabled ? Self.edrLampBrightness : ordinaryLampBrightness }
+        set {
+            guard !backlightEDREnabled else { return }
+            ordinaryLampBrightness = newValue
+        }
+    }
     let transmissionEnabled = true
     var sourceLabel: String {
         get { trays[activeTrayIndex].name }

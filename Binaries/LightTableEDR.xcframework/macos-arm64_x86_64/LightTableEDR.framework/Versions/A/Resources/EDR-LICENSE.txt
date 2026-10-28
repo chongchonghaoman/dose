@@ -1,0 +1,16 @@
+LightTable EDR Binary Component
+Copyright (c) 2026 fuyuan9972-svg. All rights reserved.
+
+This component is proprietary and is NOT covered by the MIT license of the
+LightTable open-source foundation. Its implementation source is not distributed.
+
+Permission is granted to use and redistribute this unmodified binary, together
+with this notice, as part of LightTable applications and builds. No permission
+to modify or separately redistribute this component is granted by this notice.
+Other rights, if required, must be obtained separately from the copyright holder.
+This notice does not restrict rights granted by law or the separate licenses
+covering LightTable's open-source code and third-party components.
+
+THE COMPONENT IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. TO THE EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDER SHALL NOT BE
+LIABLE FOR ANY CLAIM OR DAMAGES ARISING FROM USE OF THE COMPONENT.

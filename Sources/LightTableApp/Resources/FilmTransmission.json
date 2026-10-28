@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "cubeDimension": 32,
+  "cubeColorSpace": "extendedLinearSRGB",
+  "spectralSource": "/Users/kaikai/Documents/ChatGPT/SpektraLab二创/docs/research/film-transmission-v1.2/manifest.json",
+  "spectralSourceSHA256": "ef003d68a6b062f23fc5523d3fb3cb1b11267aa663b14e5da45624934c1e5823",
+  "dyeCurveSource": "/Users/kaikai/Documents/ChatGPT/SpektraLab二创/FilmLab/Sources/FilmSimulation/Resources/Ektachrome5294/curves.json",
+  "dyeCurveSourceSHA256": "6158e86343f2cada242c0a180630e553d0b30179cf6ed86c5ce3e7fd76ecc2c3",
+  "fitSourceSHA256": "c797d02d749d2f919a67bf6ab37334e68617d4e3fa0e445525994589baf097f2",
+  "lamp": "CIE LED-B5",
+  "input": "ICC-normalized sRGB linear -> sRGB encoded -> shared D65 3-dye fit",
+  "output": "LED-B5 spectral transmission including base density -> extended linear sRGB; no per-pixel luminance normalization",
+  "bytes": 524288,
+  "sha256": "a4352bff898674f8eadf8f8bd7f71a42aef26b1d000fb144199cb6791fb9e776",
+  "scope": "Same hypothetical virtual 5294 dye basis for all source images; models lamp-dependent material transmission, not actual film-stock identification"
+}

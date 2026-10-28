@@ -48,7 +48,8 @@ private final class LoupeRasterWorker: @unchecked Sendable {
                         diameter: request.diameter, magnification: request.magnification ?? LoupeGeometry.magnification(for: request.diameter),
                         displayScale: request.displayScale, transmission: scene.transmission,
                         flare: scene.flare, brightness: scene.brightness,
-                        viewport: request.viewport, refractionScale: request.refractionScale)
+                        viewport: request.viewport, refractionScale: request.refractionScale,
+                        panelEDREnabled: scene.edrEnabled)
                 }
                 continuation.resume(returning: result)
             }

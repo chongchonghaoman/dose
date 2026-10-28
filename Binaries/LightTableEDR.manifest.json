@@ -1,0 +1,19 @@
+{
+  "module": "LightTableEDR",
+  "version": "0.1.103",
+  "platform": "macos",
+  "architectures": [
+    "arm64",
+    "x86_64"
+  ],
+  "files": {
+    "Info.plist": "fd39aca153a621c70570567e334e631d407448730932ce4a3379d8d7fd093acb",
+    "macos-arm64_x86_64/LightTableEDR.framework/Versions/A/Headers/LightTableEDR.h": "8f164d8c4e419fcbd08bdd8de7202fee33bb15674da7677aeca69c6e4009c142",
+    "macos-arm64_x86_64/LightTableEDR.framework/Versions/A/LightTableEDR": "b14b4df79a7121e4c8647eafb7e9accf9e6c64087d27b85b185096f527d4b2d9",
+    "macos-arm64_x86_64/LightTableEDR.framework/Versions/A/Modules/module.modulemap": "5618c7aac13e62660c35bce733a69f00cf40f10462ff4f42eb322fa5e97ba3ee",
+    "macos-arm64_x86_64/LightTableEDR.framework/Versions/A/Resources/EDR-LICENSE.txt": "e8851a1526811ebb4f861ea119ceebcb88c516aacb7f4ad2be983c05119b6f82",
+    "macos-arm64_x86_64/LightTableEDR.framework/Versions/A/Resources/Info.plist": "e245aab184fb5a17b945c76b357962d15c24f033b4635e7f0a065d5ca1a4a916",
+    "macos-arm64_x86_64/LightTableEDR.framework/Versions/A/Resources/LightTableEDR.metallib": "317aa9db8d2b37bc779c722b7499a77745dce5c5c091c61df8b361de9a7082c2",
+    "macos-arm64_x86_64/LightTableEDR.framework/Versions/A/_CodeSignature/CodeResources": "7395eb669c3ca645d21f675ee02312852ce83f44b7959268dd16d2848a82eaa0"
+  }
+}

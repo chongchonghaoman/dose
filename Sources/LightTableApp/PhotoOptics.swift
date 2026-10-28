@@ -1,12 +1,18 @@
 import CoreImage
 import Foundation
+import Metal
 import LightTableCore
+import LightTableEDR
 
-/// SDR lamp and ignition response. Preserve source tones at the default setting.
+/// Shared lamp response with optional display-referred EDR transmission.
 enum PhotoOptics {
-    private static let sdrRenderer = CIContext(options: [.workingColorSpace: blendSpace, .cacheIntermediates: false])
-    static let linearSpace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!
-    static let blendSpace = CGColorSpace(name: CGColorSpace.displayP3)!
+    static let transmissionExposureGain = 1.101531648960814
+    private static let sdrRenderer = CIContext(options: [.workingColorSpace: linearSpace, .cacheIntermediates: false])
+    static let edrRenderer: CIContext? = MTLCreateSystemDefaultDevice().map {
+        CIContext(mtlDevice: $0, options: [.workingColorSpace: linearSpace, .cacheIntermediates: false])
+    }
+    static let linearSpace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
+    static let blendSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     static let lampKernel = CIColorKernel(source: """
         kernel vec4 lampTransmission(__sample color, float gain) {
             float sourcePeak = max(color.r, max(color.g, color.b));
@@ -21,7 +27,7 @@ enum PhotoOptics {
         """)
     static let ignitionKernel = CIColorKernel(source: """
         kernel vec4 ignitionExposure(__sample color, float stops) {
-            float light = dot(color.rgb, vec3(0.228975, 0.691739, 0.079287));
+            float light = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
             float protection = smoothstep(0.004, 0.075, light);
             float sourcePeak = max(color.r, max(color.g, color.b));
             float peak = sourcePeak * exp2(stops * protection);
@@ -50,7 +56,7 @@ enum PhotoOptics {
 
             // Transient shoulder protects highlight hue from SDR channel clipping.
             if (exposureStops > 0.0) {
-                float light = dot(result, vec3(0.228975, 0.691739, 0.079287));
+                float light = dot(result, vec3(0.2126, 0.7152, 0.0722));
                 float protection = smoothstep(0.004, 0.075, light);
                 float sourcePeak = max(result.r, max(result.g, result.b));
                 float peak = sourcePeak * exp2(exposureStops * protection);
@@ -63,19 +69,22 @@ enum PhotoOptics {
             return vec4(result, color.a);
         }
         """)
+    /// Display limits and EDR response are provided by the binary component.
+    static func boundedEDRHeadroom(_ value: Double) -> Double {
+        LTEDRHeadroom(value)
+    }
 
     static func fusedOptical(_ image: CIImage, lampBrightness: Double, exposureStops: Double) -> CIImage {
-        let gain = min(1.6, max(1, lampBrightness.isFinite ? lampBrightness : 1))
+        let power = min(1.6, max(1, lampBrightness.isFinite ? lampBrightness : 1))
+        let gain = power * transmissionExposureGain
 
         // Skip if no-op
         guard gain > 1 || exposureStops > 0, let kernel = fusedOpticalKernel else {
             return image
         }
 
-        let linear = image.applyingFilter("CISRGBToneCurveToLinear")
-        let result = kernel.apply(extent: image.extent,
-                                 arguments: [linear, gain, exposureStops]) ?? linear
-        return result.applyingFilter("CILinearToSRGBToneCurve")
+        return kernel.apply(extent: image.extent,
+                            arguments: [image, gain, exposureStops]) ?? image
     }
 
     static func mix(_ from: CIImage, _ to: CIImage, _ amount: Double) -> CIImage {
@@ -93,11 +102,33 @@ enum PhotoOptics {
     }
 
     static func composite(preview: PhotoPreview, transmission: Double, flare: Double,
-                          brightness: Double, transform: CGAffineTransform = .identity) -> CIImage {
+                          brightness: Double, transform: CGAffineTransform = .identity,
+                          edrEnabled: Bool = false, edrHeadroom: Double = 1, litImage: CIImage? = nil,
+                          boostedImage: CIImage? = nil) -> CIImage {
         let dark = transform == .identity ? preview.darkCIImage : preview.darkCIImage.transformed(by: transform)
         if transmission <= 0 { return dark }
 
-        // Cached variants contain scatter only. Apply the lamp's physical gain
+        if edrEnabled {
+            let sourceLit = litImage ?? preview.litCIImage
+            let rawBase = preview.transmitted ? mix(sourceLit, boostedImage ?? preview.boostedCIImage,
+                LightResponse.photoBrightnessMix(brightness: brightness)) : sourceLit
+            let rawHalo = preview.flareCIImage.applyingFilter("CIScreenBlendMode", parameters: [
+                kCIInputBackgroundImageKey: rawBase
+            ])
+            let rawStable = multiplied(mix(rawBase, rawHalo,
+                LightResponse.photoGlowMix(flare: flare, brightness: brightness)),
+                LightResponse.photoLevel(brightness: brightness))
+            let stops = LightResponse.photoExposureStops(flare: flare, brightness: brightness)
+            let power = min(1.6, max(1, brightness.isFinite ? brightness : 1))
+            let rawLit = boundedEDRHeadroom(edrHeadroom) > 1 && LTEDRIsReady()
+                ? LTEDRCompose(rawStable, power * transmissionExposureGain, stops, edrHeadroom)
+                : fusedOptical(rawStable, lampBrightness: brightness, exposureStops: stops)
+            let lit = transform == .identity ? rawLit : rawLit.transformed(by: transform)
+            return mix(dark, lit, min(1, max(0, transmission)))
+        }
+
+        // Cached variants contain the steady tone response and local scatter.
+        // Apply the lamp's gain
         // here in float linear light, before display clipping can discard it.
         let rawBase = preview.transmitted ? mix(preview.litCIImage, preview.boostedCIImage,
                        LightResponse.photoBrightnessMix(brightness: brightness)) : preview.litCIImage
@@ -114,19 +145,16 @@ enum PhotoOptics {
     }
 
     static func lamp(_ image: CIImage, brightness: Double) -> CIImage {
-        let gain = min(1.6, max(1, brightness.isFinite ? brightness : 1))
+        let power = min(1.6, max(1, brightness.isFinite ? brightness : 1))
+        let gain = power * transmissionExposureGain
         guard gain > 1, let kernel = lampKernel else { return image }
-        let linear = image.applyingFilter("CISRGBToneCurveToLinear")
-        let powered = kernel.apply(extent: image.extent, arguments: [linear, gain]) ?? linear
-        return powered.applyingFilter("CILinearToSRGBToneCurve")
+        return kernel.apply(extent: image.extent, arguments: [image, gain]) ?? image
     }
 
     static func ignition(_ image: CIImage, flare: Double, brightness: Double) -> CIImage {
         let stops = LightResponse.photoExposureStops(flare: flare, brightness: brightness)
         guard stops > 0, let kernel = ignitionKernel else { return image }
-        let linear = image.applyingFilter("CISRGBToneCurveToLinear")
-        let exposed = kernel.apply(extent: image.extent, arguments: [linear, stops]) ?? linear
-        return exposed.applyingFilter("CILinearToSRGBToneCurve")
+        return kernel.apply(extent: image.extent, arguments: [image, stops]) ?? image
     }
 
     static func sdrImage(preview: PhotoPreview, transmission: Double, flare: Double, brightness: Double) -> CGImage? {

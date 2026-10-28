@@ -55,7 +55,8 @@ private struct AlbumFilm: View {
             Group {
                 if let preview, !catalog {
                     TransmittedPhoto(preview: preview.viewing(transmitted: model.transmissionEnabled), size: proxy.size, transmission: transmission,
-                                     flare: flare, brightness: model.lampBrightness)
+                                     flare: flare, brightness: model.lampBrightness,
+                                     edrEnabled: model.backlightEDREnabled)
                 } else if let image = thumbnail ?? model.thumbnails[url] {
                     Image(decorative: image, scale: 1).resizable().interpolation(.high)
                         .colorMultiply(Color(white: catalog ? 1 : 0.10 + 0.90 * transmission))
