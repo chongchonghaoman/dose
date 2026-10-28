@@ -1,6 +1,6 @@
 # dose
 
-**A local photo workspace for Windows.** Spread out your photographs, choose a set, compare film looks, develop a frame, and turn it into something worth revisiting.
+dose is a local Windows app for selecting photos, trying film looks and arranging a set for sharing. Its built-in SpektraLab editor saves developed images back to the same library.
 
 [Download for Windows](https://github.com/chongchonghaoman/dose/releases/latest) · [中文](README.md) · [Build](docs/BUILD.md)
 
@@ -16,5 +16,5 @@ Download `dose-0.28.0-Windows-x64.zip`, extract the entire folder, then run `dos
 
 For development, install Node.js 22.12+, then run `npm ci`, `npm run prepare:runtime`, and `npm start`. Runtime preparation retrieves and verifies the pinned release. See [BUILD.md](docs/BUILD.md) for frontend builds, tests, packaging and complete corresponding native sources.
 
-dose maintains its photo workflow, LUT browsing, layout/share features and editor integration. The light-table upstream is [LightTable](https://github.com/fuyuan9972-svg/LightTable) (MIT); film simulation comes from [SpektraLab](https://github.com/JamesQiu2005/SpektraLab) and its [Windows community version](https://github.com/LUOJW5566/SpektraLab). The integrated distribution is GPL-3.0-or-later. Component and material licenses remain separate; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). dose is an independent project, not an official release or endorsement from those authors.
+dose is maintained independently, with its own photo workflow, LUT browsing, layout/share features and editor integration. Thanks to [LightTable](https://github.com/fuyuan9972-svg/LightTable) (MIT), [SpektraLab](https://github.com/JamesQiu2005/SpektraLab) and its [Windows community version](https://github.com/LUOJW5566/SpektraLab) for the work this project builds on. The integrated distribution is GPL-3.0-or-later. Component and material licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
