@@ -69,7 +69,7 @@ struct OpticalFrameGate {
 }
 
 enum OpticalPresentationPolicy {
-    static func waitsForScheduling(edrLoupe: Bool) -> Bool { !edrLoupe }
+    static func waitsForScheduling(liveLoupe: Bool) -> Bool { !liveLoupe }
 }
 
 final class OpticalMetalView: MTKView {
@@ -296,6 +296,7 @@ final class OpticalMetalView: MTKView {
         let revision: Int
         let size: CGSize
         let edrLoupe: Bool
+        let liveLoupe: Bool
     }
 
     private enum LiveEncode {
@@ -342,7 +343,7 @@ final class OpticalMetalView: MTKView {
                 if edrLoupe { view.edrLoupeFrameGate.begin() }
                 drawables.append(drawable)
                 encoded.append(EncodedSurface(view: view, revision: view.retry.revision,
-                                              size: view.drawableSize, edrLoupe: edrLoupe))
+                    size: view.drawableSize, edrLoupe: edrLoupe, liveLoupe: view.loupe != nil))
             }
         }
         guard !drawables.isEmpty else { return }
@@ -365,16 +366,15 @@ final class OpticalMetalView: MTKView {
                 }
             }
         }
-        let hasEDRLoupe = encoded.contains(where: \.edrLoupe)
-        if OpticalPresentationPolicy.waitsForScheduling(edrLoupe: hasEDRLoupe) {
-            // Transaction-synchronized table surfaces retain their coordinated presentation.
+        let hasLiveLoupe = encoded.contains(where: \.liveLoupe)
+        if OpticalPresentationPolicy.waitsForScheduling(liveLoupe: hasLiveLoupe) {
+            // Static tabletop surfaces retain their coordinated presentation.
             buffer.commit()
             buffer.waitUntilScheduled()
             guard buffer.status != .error else { return }
             for drawable in drawables { drawable.present() }
         } else {
-            // EDR loupe graphs are expensive to schedule. Queue presentation
-            // before commit so pointer input never waits for GPU scheduling on the main thread.
+            // Keep every live lens mode responsive while pointer input updates its drawable.
             for drawable in drawables { drawable.present() }
             buffer.commit()
         }

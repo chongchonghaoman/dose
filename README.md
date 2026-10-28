@@ -6,7 +6,7 @@
 
 A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
 
-v0.1.108 优化使用体验，修复部分问题，提升使用稳定性。见[更新说明](docs/releases/v0.1.108.md)。
+源码版本 v0.1.110：修复部分 Mac 开启放大镜卡住的问题，改善移动时的抖动和掉帧。原问题设备已通过用户复测，见[更新说明](docs/releases/v0.1.110.md)。安装包发布后可通过应用内更新获取。
 
 ## 下载与运行
 
@@ -16,7 +16,7 @@ v0.1.108 优化使用体验，修复部分问题，提升使用稳定性。见[�
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-当前版本 **[v0.1.108](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.108)**：优化使用体验，修复部分问题，提升使用稳定性。
+已发布版本 **[v0.1.108](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.108)**：优化使用体验，修复部分问题，提升使用稳定性。
 
 **[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.108/LightTable-v0.1.108-macOS-arm64.zip)**
 

@@ -803,6 +803,7 @@ struct TableCanvas: View {
             .onChange(of: isCanvasZooming) { _, active in if !active { endCanvasZoom() } }
             .onDisappear { endPan(); endCanvasZoom() }
             .background {
+                LoupePointerTracking { loupe.pointer = $0 }
                 CanvasNavigation(enabled: !guideBlocked && !model.slideshowMode && !model.returnToPastMode && draggingID == nil && liftedPhoto == nil && !isPanning && !isCanvasZooming && selectionBeforeMarquee == nil,
                     excludedRect: guideExclusion,
                     moved: { model.panBy($0) }, zoomed: { model.zoomCanvas(by: $0, around: $1) })
@@ -821,9 +822,6 @@ struct TableCanvas: View {
                     })
             }
             .coordinateSpace(name: "table")
-            .onContinuousHover { phase in
-                switch phase { case .active(let point): loupe.pointer = point; case .ended: loupe.pointer = nil }
-            }
             .onDrop(of: PhotoDrag.acceptedTypes + [AlbumDrag.contentType], isTargeted: $targeted) { providers, point in
                 model.accept(providers, at: point, board: rect)
             }

@@ -4,7 +4,11 @@ import LightTableCore
 
 private final class KeyWindow: NSWindow {
     var reportsKeyWindow = true
+    var testMouseLocation: CGPoint?
     override var isKeyWindow: Bool { reportsKeyWindow }
+    override var mouseLocationOutsideOfEventStream: NSPoint {
+        testMouseLocation ?? super.mouseLocationOutsideOfEventStream
+    }
 }
 
 private struct PreferenceProbe: View {
@@ -529,6 +533,96 @@ private actor RasterGate {
         check(tracking.sourcePoint == tracking.pointer && tracking.cursorHidden,
               "reduced-motion return retains ordinary cursor hiding and direct tracking")
         tracking.cancel()
+
+        // Exercise real AppKit tracking callbacks without moving the user's mouse.
+        let pointerWindow = KeyWindow(contentRect: CGRect(x: -3000, y: -3000, width: 300, height: 200),
+                                      styleMask: .borderless, backing: .buffered, defer: false)
+        let pointerHost = NSView(frame: CGRect(x: 0, y: 0, width: 300, height: 200))
+        let pointerView = LoupePointerTracking.TrackingView(frame: pointerHost.bounds)
+        let originalMouseEvents = pointerWindow.acceptsMouseMovedEvents
+        pointerWindow.contentView = pointerHost
+        pointerHost.addSubview(pointerView)
+        pointerWindow.alphaValue = 0
+        pointerWindow.orderFront(nil)
+        defer { pointerWindow.orderOut(nil) }
+        check(pointerWindow.acceptsMouseMovedEvents,
+              "tracking enables mouse movement events only while attached")
+        var pointerUpdates: [CGPoint?] = []
+        pointerView.moved = { pointerUpdates.append($0) }
+        func placePointer(_ point: CGPoint) {
+            pointerWindow.testMouseLocation = pointerView.convert(point, to: nil)
+        }
+        func trackingEvent(_ type: NSEvent.EventType) -> NSEvent {
+            // Deliberately stale coordinates: tracking must read the current location.
+            NSEvent.enterExitEvent(with: type, location: CGPoint(x: -100, y: -100),
+                modifierFlags: [], timestamp: 0, windowNumber: pointerWindow.windowNumber,
+                context: nil, eventNumber: 1, trackingNumber: 0, userData: nil)!
+        }
+        let pointerStart = CGPoint(x: 80, y: 65)
+        placePointer(pointerStart)
+        pointerView.updateTrackingAreas()
+        check(pointerUpdates.isEmpty, "tracking setup does not publish during SwiftUI layout")
+        try await Task.sleep(for: .milliseconds(25))
+        check(pointerUpdates.count == 1 && pointerUpdates.last! == pointerStart,
+              "attaching a canvas discovers an already stationary pointer")
+        check(pointerView.isFlipped && pointerView.hitTest(pointerStart) == nil,
+              "tracking uses table coordinates and does not intercept clicks or drags")
+        let pointerArea = pointerView.trackingAreas.first!
+        check(pointerArea.options.contains([.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect]),
+              "native tracking covers movement and visible bounds in inactive windows too")
+        for _ in 0..<200 { pointerView.mouseExited(with: trackingEvent(.mouseExited)) }
+        check(pointerUpdates.count == 1 && pointerUpdates.last! == pointerStart,
+              "stale exit events cannot remove a lens while the pointer remains inside")
+        pointerView.mouseEntered(with: trackingEvent(.mouseEntered))
+        check(pointerUpdates.count == 1, "duplicate entry at the same location does not republish the scene")
+        let pointerNext = CGPoint(x: 145, y: 110)
+        placePointer(pointerNext)
+        let pointerMove = NSEvent.mouseEvent(with: .mouseMoved, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: pointerWindow.windowNumber,
+            context: nil, eventNumber: 2, clickCount: 0, pressure: 0)!
+        pointerView.mouseMoved(with: pointerMove)
+        check(pointerUpdates.count == 2 && pointerUpdates.last! == pointerNext,
+              "native movement publishes the latest location without queued-event lag")
+        placePointer(CGPoint(x: 301, y: 110))
+        pointerView.mouseExited(with: trackingEvent(.mouseExited))
+        check(pointerUpdates.count == 3 && pointerUpdates.last! == nil,
+              "a real exit releases the lens input")
+        pointerView.mouseExited(with: trackingEvent(.mouseExited))
+        check(pointerUpdates.count == 3, "repeated real exits do not repeatedly tear down the lens")
+        placePointer(pointerStart)
+        pointerView.mouseEntered(with: trackingEvent(.mouseEntered))
+        check(pointerUpdates.count == 4 && pointerUpdates.last! == pointerStart,
+              "re-entry restores the lens at the current location")
+        pointerWindow.reportsKeyWindow = false
+        placePointer(pointerNext)
+        pointerView.mouseMoved(with: pointerMove)
+        check(pointerUpdates.count == 5 && pointerUpdates.last! == pointerNext,
+              "pointer tracking remains available behind another app window")
+        for _ in 0..<20 { pointerView.updateTrackingAreas(); pointerView.scheduleRefresh() }
+        check(pointerView.trackingAreas.count == 1 && pointerView.trackingAreas.first === pointerArea,
+              "layout updates preserve the native tracking area instead of rebuilding it")
+        placePointer(pointerStart)
+        check(pointerUpdates.count == 5, "layout refreshes stay deferred and coalesced")
+        try await Task.sleep(for: .milliseconds(25))
+        check(pointerUpdates.count == 6 && pointerUpdates.last! == pointerStart,
+              "coalesced layout refresh reads the latest pointer once")
+        pointerHost.isHidden = true
+        pointerView.scheduleRefresh()
+        try await Task.sleep(for: .milliseconds(25))
+        check(pointerUpdates.count == 7 && pointerUpdates.last! == nil,
+              "a hidden ancestor releases the lens input")
+        pointerHost.isHidden = false
+        pointerView.scheduleRefresh()
+        try await Task.sleep(for: .milliseconds(25))
+        check(pointerUpdates.count == 8 && pointerUpdates.last! == pointerStart,
+              "revealing the canvas restores a stationary pointer")
+        pointerView.removeFromSuperview()
+        try await Task.sleep(for: .milliseconds(25))
+        check(pointerUpdates.count == 9 && pointerUpdates.last! == nil,
+              "detaching the canvas clears its last pointer")
+        check(pointerWindow.acceptsMouseMovedEvents == originalMouseEvents,
+              "tracking does not change the window's mouse-event policy")
+        pointerWindow.orderOut(nil)
 
         // Verify the actual view scales pixels inside a stationary circle,
         // rather than merely satisfying the independent timing equations.

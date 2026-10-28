@@ -102,14 +102,14 @@ struct LoupeSceneKey: PreferenceKey {
     var scene: LoupeSceneInput? {
         didSet { updateCursorVisibility() }
     }
-    var cursorEnabled = false {
+    @ObservationIgnored var cursorEnabled = false {
         didSet { if cursorEnabled != oldValue { updateCursorVisibility() } }
     }
     var closeMagnification: LoupeCloseMagnification = .original
     var viewingSize = CGSize.zero
     private(set) var anchor: CGPoint?
     private(set) var isClose = false
-    private(set) var cursorHidden = false
+    @ObservationIgnored private(set) var cursorHidden = false
     @ObservationIgnored private var returnTask: Task<Void, Never>?
     var sourcePoint: CGPoint? { anchor ?? pointer }
 
@@ -161,8 +161,98 @@ struct LoupeSceneKey: PreferenceKey {
 
     private func setCursorHidden(_ hidden: Bool) {
         guard hidden != cursorHidden else { return }
-        if hidden { NSCursor.hide() } else { NSCursor.unhide() }
         cursorHidden = hidden
+        if hidden { NSCursor.hide() } else { NSCursor.unhide() }
+    }
+}
+
+/// Keep pointer tracking independent of the lens tree and cursor visibility.
+struct LoupePointerTracking: NSViewRepresentable {
+    let moved: (CGPoint?) -> Void
+
+    func makeNSView(context: Context) -> TrackingView { TrackingView() }
+
+    func updateNSView(_ view: TrackingView, context: Context) {
+        view.moved = moved
+        view.scheduleRefresh()
+    }
+
+    final class TrackingView: NSView {
+        var moved: ((CGPoint?) -> Void)?
+        private var area: NSTrackingArea?
+        private var lastPoint: CGPoint?
+        private var refreshScheduled = false
+        private weak var trackingWindow: NSWindow?
+        private var previousMouseMovedSetting: Bool?
+
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if area == nil {
+                let area = NSTrackingArea(rect: .zero,
+                    options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                    owner: self, userInfo: nil)
+                addTrackingArea(area)
+                self.area = area
+            }
+            scheduleRefresh()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            restoreWindowMouseMovedSetting()
+            trackingWindow = window
+            previousMouseMovedSetting = window?.acceptsMouseMovedEvents
+            if let window { window.acceptsMouseMovedEvents = true }
+            scheduleRefresh()
+        }
+
+        override func layout() {
+            super.layout()
+            scheduleRefresh()
+        }
+
+        override func mouseMoved(with event: NSEvent) { refreshPointer() }
+        override func mouseEntered(with event: NSEvent) { refreshPointer() }
+        override func mouseExited(with event: NSEvent) { refreshPointer() }
+
+        func scheduleRefresh() {
+            guard !refreshScheduled else { return }
+            refreshScheduled = true
+            // AppKit layout and SwiftUI updates must not synchronously publish state.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.refreshScheduled = false
+                self.refreshPointer()
+            }
+        }
+
+        private func refreshPointer() {
+            let point: CGPoint?
+            if let window, window.isVisible, !isHiddenOrHasHiddenAncestor {
+                let current = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+                point = visibleRect.contains(current) ? current : nil
+            } else {
+                point = nil
+            }
+            // An exit queued before a lens/cursor update can arrive while the
+            // pointer is still inside. Never tear down the lens for that event.
+            guard point != lastPoint else { return }
+            lastPoint = point
+            moved?(point)
+        }
+
+        private func restoreWindowMouseMovedSetting() {
+            if let trackingWindow, let previousMouseMovedSetting {
+                trackingWindow.acceptsMouseMovedEvents = previousMouseMovedSetting
+            }
+            trackingWindow = nil
+            previousMouseMovedSetting = nil
+        }
+
+        deinit { restoreWindowMouseMovedSetting() }
     }
 }
 

@@ -68,14 +68,16 @@ final class LoupeRenderer {
         self.textureCache = textureCache
     }
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-    private let context = CIContext(options: [.cacheIntermediates: false,
+    // Live Metal composition does not need a bitmap context. Initialize it only
+    // for readback and retain it across short-lived lens renderer instances.
+    private static let context = CIContext(options: [.cacheIntermediates: false,
         .workingColorSpace: PhotoOptics.linearSpace])
     // A bounded, monotonic radial warp: no torus, foldover, or sampled ring.
     // Keep the central 75% straight, then smoothly change the local scale.
     // The 3.2% displacement cap preserves monotonic radial sampling.
     // Keep ROI and cropped-scene coverage in step with this kernel's bound.
     private static let maximumRefractionInset: CGFloat = 0.032
-    private let edgeKernel = CIWarpKernel(source: """
+    private static let edgeKernel = CIWarpKernel(source: """
         kernel vec2 loupeEdge(vec2 centre, float radius, float strength) {
             vec2 delta = destCoord() - centre;
             float distance = length(delta);
@@ -115,7 +117,7 @@ final class LoupeRenderer {
             refracts: refracts, opticalDiameter: opticalDiameter,
             viewport: viewport, refractionScale: refractionScale,
             panelEDREnabled: panelEDREnabled) else { return nil }
-        return context.createCGImage(glass, from: glass.extent, format: .RGBA8, colorSpace: colorSpace)
+        return Self.context.createCGImage(glass, from: glass.extent, format: .RGBA8, colorSpace: colorSpace)
     }
 
     /// Build a lazy Core Image graph and encode it directly into the Metal drawable.
@@ -226,7 +228,7 @@ final class LoupeRenderer {
             scene = scene.cropped(to: panelRect).composited(over: black)
         }
         let glass: CIImage
-        if refracts, strength > 0, let edgeKernel {
+        if refracts, strength > 0, let edgeKernel = Self.edgeKernel {
             glass = edgeKernel.apply(extent: output, roiCallback: { _, rect in
                 rect.insetBy(dx: -refractionInset - 1, dy: -refractionInset - 1)
             }, image: scene, arguments: [CIVector(cgPoint: centre), opticalRadius,
