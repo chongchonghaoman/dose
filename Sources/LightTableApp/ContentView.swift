@@ -361,6 +361,18 @@ struct ContentView: View {
         let secondary = Color(white: 0.66)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
+                if model.isSelectingTrayPhotos {
+                    Text("已选 \(model.selectedTrayPhotos.count) 张")
+                        .font(.system(size: 12, weight: .medium)).monospacedDigit()
+                    Spacer()
+                    Button(role: .destructive, action: model.deleteSelection) {
+                        Label("删除所选", systemImage: "trash")
+                            .padding(.horizontal, 12).frame(height: 32)
+                            .background(Color.white.opacity(0.08), in: Capsule())
+                    }.buttonStyle(.plain).disabled(model.selectedTrayPhotos.isEmpty)
+                    Button("取消", action: model.cancelTrayPhotoSelection)
+                        .buttonStyle(.plain).frame(height: 32)
+                } else {
                 Button(action: model.chooseFolder) {
                     Label("从文件夹导入", systemImage: "folder.badge.plus")
                         .font(.system(size: 12, weight: .medium)).padding(.horizontal, 14).frame(height: 32)
@@ -388,6 +400,7 @@ struct ContentView: View {
                     Label("相册", systemImage: "rectangle.stack").font(.system(size: 12)).padding(.horizontal, 12).frame(height: 30)
                         .background(Color.white.opacity(0.08), in: Capsule())
                 }.buttonStyle(.plain)
+                }
             }
             if photos.isEmpty && model.albums.isEmpty {
                 HStack {
@@ -407,6 +420,11 @@ struct ContentView: View {
                                 .opacity(model.slideshowMode ? 0 : 1)
                                 .contextMenu {
                                     Button("放到灯板中央") { model.placeAtViewCenter(photo.url) }
+                                    Button {
+                                        model.beginTrayPhotoSelection(photo.url, in: trayID)
+                                    } label: {
+                                        Label("多选", systemImage: "checkmark.circle")
+                                    }
                                     Button(role: .destructive) {
                                         model.deletePhoto(photo.url, fromTray: trayID)
                                     } label: {
@@ -615,7 +633,7 @@ private struct TrayPhoto: View {
     @State private var hovered = false
     @GestureState private var pulling = false
     private var selected: Bool {
-        model.selectedTrayPhoto == TrayPhotoSelection(trayID: trayID, url: photo.url.standardizedFileURL)
+        model.selectedTrayPhotos.contains(TrayPhotoSelection(trayID: trayID, url: photo.url.standardizedFileURL))
     }
     var body: some View {
         VStack(spacing: 5) {
@@ -631,7 +649,21 @@ private struct TrayPhoto: View {
                     }
                 }
                 .overlay {
+                    if model.isSelectingTrayPhotos {
+                        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(selected ? Color.white : Color.white.opacity(0.8))
+                            .background(Color.black.opacity(0.75), in: Circle())
+                            .padding(5).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                            .allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                }
+                .overlay {
                     GeometryReader { proxy in
+                        if model.isSelectingTrayPhotos {
+                            Color.clear.contentShape(Rectangle())
+                                .onTapGesture { model.selectTrayPhoto(photo.url, in: trayID) }
+                        } else {
                         Color.clear.contentShape(Rectangle())
                             .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named("workbench"))
                                 .updating($pulling) { _, active, _ in active = true }
@@ -642,6 +674,7 @@ private struct TrayPhoto: View {
                                 .exclusively(before: TapGesture().onEnded { _ in
                                     model.selectTrayPhoto(photo.url, in: trayID)
                                 }))
+                        }
                     }
                 }
             Text(photo.name).font(.system(size: 9)).lineLimit(1).frame(width: 94).padding(.horizontal, 5)
@@ -649,7 +682,7 @@ private struct TrayPhoto: View {
                 .onTapGesture { model.selectTrayPhoto(photo.url, in: trayID) }
         }.help("\(photo.url.lastPathComponent)；点选后按 Delete 从底栏删除")
         .onChange(of: pulling) { _, active in
-            if active { model.setSelection([]) }
+            if active && !model.isSelectingTrayPhotos { model.setSelection([]) }
             else { onTrackingEnded() }
         }
         .onChange(of: model.thumbnails[photo.url] != nil) { _, available in
@@ -657,7 +690,7 @@ private struct TrayPhoto: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(photo.name)
-        .accessibilityHint("点击选中后按 Delete 从底栏删除，也可拖到灯板")
+        .accessibilityHint(model.isSelectingTrayPhotos ? "点击切换选择，按 Delete 删除所选照片" : "点击选中后按 Delete 从底栏删除，也可拖到灯板；右键进入多选")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { model.selectTrayPhoto(photo.url, in: trayID) }
         .task(id: photo.url) {

@@ -8,12 +8,12 @@ import Foundation
         var count = 0
         func expect(_ value: Bool, _ label: String) { precondition(value, label); count += 1 }
         let a = UUID(), b = UUID()
-        let oldVersions = ["0.1.72", "0.1.73", "0.1.74", "0.1.103", "0.1.107"]
-        let oldRevisions = ["0.1.72.initial", "0.1.73.trays-1", "0.1.74.deletion-1", "0.1.103.edr-notes-2", "0.1.107.edr-notes-3"]
-        let revision = "0.1.108.\(FeatureGuideState.contentRevision)"
+        let oldVersions = ["0.1.72", "0.1.73", "0.1.74", "0.1.103", "0.1.107", "0.1.108", "0.1.110"]
+        let oldRevisions = ["0.1.72.initial", "0.1.73.trays-1", "0.1.74.deletion-1", "0.1.103.edr-notes-2", "0.1.107.edr-notes-3", "0.1.108.maintenance-1", "0.1.110.maintenance-1"]
+        let revision = "0.1.111.\(FeatureGuideState.contentRevision)"
         defaults.set(oldVersions, forKey: FeatureGuideState.seenKey)
         defaults.set(oldRevisions, forKey: FeatureGuideState.seenRevisionKey)
-        let state = FeatureGuideState(defaults: defaults, version: "0.1.108")
+        let state = FeatureGuideState(defaults: defaults, version: "0.1.111")
         expect(state.available && !state.hasBeenPresented, "matching release starts unseen")
         state.presentAutomatically(in: a, ready: false)
         expect(state.phase == .idle, "busy windows defer notes")
@@ -28,9 +28,9 @@ import Foundation
         state.presentAutomatically(in: b, ready: true)
         expect(state.isWelcome(in: b), "closed unseen window does not lose notes")
         state.didPresent(in: b); state.didPresent(in: b)
-        expect(defaults.stringArray(forKey: FeatureGuideState.seenKey) == oldVersions + ["0.1.108"], "presentation persists once and keeps older versions")
+        expect(defaults.stringArray(forKey: FeatureGuideState.seenKey) == oldVersions + ["0.1.111"], "presentation persists once and keeps older versions")
         expect(defaults.stringArray(forKey: FeatureGuideState.seenRevisionKey) == oldRevisions + [revision], "presentation preserves older content records")
-        expect(FeatureGuideState.tourStepCount == 0, "this adjustment release contains notes without an operation tour")
+        expect(FeatureGuideState.tourStepCount == 0, "this release explains multiselect in its welcome notes")
         state.beginTour(in: b)
         expect(state.isWelcome(in: b) && state.step(in: b) == nil, "notes-only release cannot start a tour")
         state.advance(in: b); state.previous(in: b)
@@ -39,7 +39,7 @@ import Foundation
         expect(state.isWelcome(in: b), "other window cannot dismiss notes")
         state.dismissWelcome(in: b)
         expect(state.phase == .idle && state.owner == nil, "start viewing closes notes")
-        let restarted = FeatureGuideState(defaults: defaults, version: "0.1.108")
+        let restarted = FeatureGuideState(defaults: defaults, version: "0.1.111")
         restarted.presentAutomatically(in: a, ready: true)
         expect(restarted.phase == .idle, "restart does not repeat notes")
         restarted.replay(in: a)
@@ -56,9 +56,9 @@ import Foundation
         expect(!unknown.hasBeenPresented, "seen versions remain isolated")
 
         // Earlier test builds may have recorded the version without these release notes.
-        defaults.set(oldVersions + ["0.1.108"], forKey: FeatureGuideState.seenKey)
+        defaults.set(oldVersions + ["0.1.111"], forKey: FeatureGuideState.seenKey)
         defaults.set(oldRevisions, forKey: FeatureGuideState.seenRevisionKey)
-        let upgraded = FeatureGuideState(defaults: defaults, version: "0.1.108")
+        let upgraded = FeatureGuideState(defaults: defaults, version: "0.1.111")
         expect(!upgraded.hasBeenPresented, "earlier test builds do not suppress the release notes")
         upgraded.presentAutomatically(in: a, ready: true)
         expect(upgraded.isWelcome(in: a), "existing test users receive the new notes")
@@ -66,10 +66,10 @@ import Foundation
         expect(!upgraded.hasBeenPresented, "unrendered notes are not acknowledged")
         upgraded.presentAutomatically(in: b, ready: true); upgraded.didPresent(in: b)
         expect(upgraded.hasBeenPresented, "rendered notes are acknowledged")
-        expect(defaults.stringArray(forKey: FeatureGuideState.seenKey) == oldVersions + ["0.1.108"], "upgrading keeps version history without duplicates")
+        expect(defaults.stringArray(forKey: FeatureGuideState.seenKey) == oldVersions + ["0.1.111"], "upgrading keeps version history without duplicates")
         expect(defaults.stringArray(forKey: FeatureGuideState.seenRevisionKey) == oldRevisions + [revision], "upgrading preserves previous content records")
         upgraded.finish(in: b)
-        let upgradedRestart = FeatureGuideState(defaults: defaults, version: "0.1.108")
+        let upgradedRestart = FeatureGuideState(defaults: defaults, version: "0.1.111")
         upgradedRestart.presentAutomatically(in: a, ready: true)
         expect(upgradedRestart.phase == .idle, "notes do not repeat after restart")
         print("Feature guide: \(count) checks passed")

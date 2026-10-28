@@ -391,6 +391,64 @@ private final class DeferredFile: @unchecked Sendable {
         for url in [a, b, c] {
             check(try Data(contentsOf: url) == image, "single-photo deletion leaves original unchanged: \(url.lastPathComponent)")
         }
+        let batch = TableModel(restore: false, storageURL: root.appendingPathComponent("batch.json"))
+        await batch.importURLs([a, b, c])
+        let batchFirst = batch.activeTrayID
+        let batchOther = batch.newTray()
+        await batch.importURLs([a, b])
+        batch.selectTray(batchFirst)
+        batch.beginTrayPhotoSelection(a, in: batchFirst)
+        check(batch.isSelectingTrayPhotos && batch.selectedTrayPhotos == [TrayPhotoSelection(trayID: batchFirst, url: a)],
+              "multiselect begins with the context photo checked")
+        batch.selectTrayPhoto(b, in: batchFirst)
+        check(batch.selectedTrayPhotos.count == 2 && batch.canDeleteSelection && batch.selectedTrayPhoto == nil,
+              "clicking another tray photo extends the batch selection")
+        batch.beginTrayPhotoSelection(a, in: batchFirst)
+        check(batch.selectedTrayPhotos.count == 2, "re-entering multiselect preserves existing checks")
+        batch.selectTrayPhoto(a, in: batchFirst)
+        batch.selectTrayPhoto(b, in: batchFirst)
+        batch.deleteSelection()
+        check(batch.isSelectingTrayPhotos && batch.selectedTrayPhotos.isEmpty && !batch.canDeleteSelection
+            && batch.photos.map(\.url) == [a, b, c], "an empty selection cannot delete photos or the tray")
+        batch.beginTrayPhotoSelection(b, in: batchOther)
+        check(batch.selectedTrayPhotos.isEmpty, "another tray cannot enter the current batch")
+        batch.selectTrayPhoto(a, in: batchFirst)
+        batch.selectTrayPhoto(b, in: batchFirst)
+        batch.selectTray(batchOther)
+        check(!batch.isSelectingTrayPhotos && batch.selectedTrayPhotos.isEmpty,
+              "switching trays clears the whole batch")
+        batch.deleteSelection()
+        check(batch.photos.map(\.url) == [a, b], "Delete after a tray switch does not target the previous batch")
+        batch.selectTray(batchFirst)
+        batch.beginTrayPhotoSelection(a, in: batchFirst)
+        batch.setSelection([])
+        check(!batch.isSelectingTrayPhotos && batch.selectedTrayPhotos.isEmpty,
+              "Escape or canvas selection exits tray multiselect")
+        batch.place(a, x: 0.2, y: 0.3)
+        batch.place(b, x: 0.4, y: 0.3)
+        batch.place(c, x: 0.6, y: 0.3)
+        batch.beginTrayPhotoSelection(a, in: batchFirst)
+        batch.selectTrayPhoto(b, in: batchFirst)
+        check(batch.selectedIDs.isEmpty, "entering tray multiselect clears canvas deletion targets")
+        batch.deleteSelection()
+        check(batch.photos.map(\.url) == [c] && batch.layout.slides.map(\.url) == [c],
+              "batch deletion removes exactly the selected members and matching canvas films")
+        check(batch.trays.first { $0.id == batchOther }?.urls == [a, b],
+              "batch deletion preserves matching members in other trays")
+        check(!batch.isSelectingTrayPhotos && batch.selectedTrayPhotos.isEmpty && !batch.canDeleteSelection,
+              "successful batch deletion exits selection without selecting a neighboring photo")
+        batch.flushSave()
+        let batchRestored = TableModel(storageURL: root.appendingPathComponent("batch.json"))
+        check(batchRestored.trays == batch.trays && batchRestored.layout == batch.layout,
+              "batch deletion and surviving canvas placements persist")
+        batch.beginTrayPhotoSelection(c, in: batchFirst)
+        batch.cancelTrayPhotoSelection()
+        check(batch.photos.map(\.url) == [c] && !batch.canDeleteSelection,
+              "cancel leaves all remaining photos intact")
+        batch.beginTrayPhotoSelection(c, in: batchFirst)
+        batch.deleteSelection()
+        check(batch.photos.isEmpty && batch.trays.count == 2 && batch.layout.slides.isEmpty,
+              "deleting every selected photo preserves an empty import tray")
         for url in [a, b, c] { check(try Data(contentsOf: url) == image, "original file remains unchanged: \(url.lastPathComponent)") }
         print("\(count) tray checks passed.")
     }

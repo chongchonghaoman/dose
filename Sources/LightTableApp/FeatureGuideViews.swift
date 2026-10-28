@@ -36,12 +36,16 @@ struct FeatureGuideWelcome: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("观片台已更新").font(.system(size: 21, weight: .semibold))
-                    Text("v\(version) · 体验优化")
+                    Text("v\(version) · 多选删除与体验优化")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }.padding(.bottom, 24)
-            feature("checkmark.circle", title: "优化使用体验",
-                    text: "修复部分问题，提升使用稳定性。")
+            feature("checkmark.circle", title: "底栏多选删除",
+                    text: "右键照片选择「多选」，再点击照片增减选择。点「删除所选」或按 Delete 一次删除。",
+                    note: "点「取消」或按 Esc 退出。磁盘原图保留。")
+                .padding(.bottom, 20)
+            feature("magnifyingglass", title: "放大镜更流畅",
+                    text: "修复部分 Mac 开启放大镜卡住的问题，改善移动时的抖动和掉帧。")
             HStack(spacing: 10) {
                 Spacer()
                 Button("开始观片", action: close).buttonStyle(FeatureGuideButtonStyle(primary: true))

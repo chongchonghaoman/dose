@@ -6,7 +6,7 @@
 
 A local macOS light table and slide projector for viewing photographs, with in-app GitHub updates.
 
-源码版本 v0.1.110：修复部分 Mac 开启放大镜卡住的问题，改善移动时的抖动和掉帧。原问题设备已通过用户复测，见[更新说明](docs/releases/v0.1.110.md)。安装包发布后可通过应用内更新获取。
+v0.1.111 新增底栏多选删除，并修复放大镜卡住、移动抖动和掉帧问题。见[更新说明](docs/releases/v0.1.111.md)，可通过应用内「检查更新…」获取。
 
 ## 下载与运行
 
@@ -16,9 +16,9 @@ A local macOS light table and slide projector for viewing photographs, with in-a
 - **运行应用不需要 Xcode、Swift 或剪映**。开发工具仅用于从源码构建。
 - 当前安装包使用 ad-hoc 本地签名，未经过 Apple 公证；首次打开时，macOS 可能提示无法验证开发者。请先确认下载来源，再按系统提示处理；如不希望运行未公证的安装包，可以自行构建。
 
-已发布版本 **[v0.1.108](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.108)**：优化使用体验，修复部分问题，提升使用稳定性。
+当前版本 **[v0.1.111](https://github.com/fuyuan9972-svg/LightTable/releases/tag/v0.1.111)**：新增底栏多选删除，改善放大镜稳定性。
 
-**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.108/LightTable-v0.1.108-macOS-arm64.zip)**
+**[直接下载 macOS 安装包（Apple Silicon）](https://github.com/fuyuan9972-svg/LightTable/releases/download/v0.1.111/LightTable-v0.1.111-macOS-arm64.zip)**
 
 从v0.1.65升级，需手动下载安装一次带更新功能的版本，之后可在App内更新。
 
@@ -34,12 +34,13 @@ A local macOS light table and slide projector for viewing photographs, with in-a
 
 ## 本版更新说明
 
-首次打开v0.1.108时显示简短说明：“优化使用体验，修复部分问题，提升使用稳定性。”点击「开始观片」继续。本次说明仅自动展示一次，菜单「帮助 → 本次更新…」可以重看。旧版操作指南保留在文档中。
+首次打开v0.1.111时介绍底栏多选删除的操作，并说明放大镜稳定性改进。点击「开始观片」继续。本次说明仅自动展示一次，菜单「帮助 → 本次更新…」可以重看。旧版操作指南保留在文档中。
 
 ## 功能
 
 - 导入照片或文件夹，包含子文件夹，追加到当前底栏；➕新建底栏，点击标签切换。
 - 从底栏拖片到台面后底栏隐藏该片；自由移动、旋转、缩放，Delete收回原底栏、原顺序。
+- 右键底栏照片选择「多选」，点击照片或文件名增减选择，点击「删除所选」或按 Delete 批量删除；取消或 Esc 退出。
 - 点选底栏照片或文件名后按 Delete，删除单张；右键底栏标签 →「删除底栏」移除整栏。两者均移除台面对应散片，其他底栏、独立相册和磁盘原图保留。
 - 「一键平铺」将当前底栏的照片重新摆放到台面；**会清空当前散片布局并重新排列**。
 - 开关灯与亮度调整，带短暂过曝回落效果。
