@@ -34,13 +34,13 @@ npm run package
 
 ## 完整原生对应源码
 
-[v0.28.0 Release](https://github.com/chongchonghaoman/dose/releases/tag/v0.28.0) 提供 `dose-0.28.0-source.zip`。SHA-256：`031ce60aa72189078b435831db22f2c3837da61bcf485fbe4ba6005650a6d328`。
+[v0.29.0 Release](https://github.com/chongchonghaoman/dose/releases/tag/v0.29.0) 提供 `dose-0.29.0-source.zip`，SHA-256 见同一 Release 的 `SHA256SUMS.txt`。0.29 的原生运行时沿用 0.28，因此上面的固定运行时准备步骤保持有效。
 
 解压后是 `dose-source/`，各部分对应关系如下：
 
 | 目录 | 用途 |
 | --- | --- |
-| `LightTable-Windows/` | 0.28.0 发布时的 dose 应用源码、测试与锁文件 |
+| `LightTable-Windows/` | 0.29.0 发布时的 dose 仓库源码、测试、锁文件与显影前端 |
 | `SpektraLab-community/` | 社区编辑器完整快照，包含 dose 的 Electron 适配 |
 | `SpektraLab-port/` | 保留旧配方兼容所需的独立 legacy 引擎源码及修改 |
 | `spectral-tools/` | LibRaw 0.22.2 与 Vulkan-Headers 对应源码 |
@@ -59,7 +59,7 @@ npm run package
 
 ## 验证
 
-`npm test` 包含 58 项单元测试；`npm run test:preferences` 包含 3 项持久化测试。CI 运行这两组测试与显影前端的类型检查／构建。CI 不代表 GPU、RAW 或界面端到端验收。
+`npm test` 包含 70 项单元测试；`npm run test:preferences` 包含 3 项持久化测试。CI 运行这两组测试与显影前端的类型检查／构建。CI 不代表 GPU、RAW 或界面端到端验收。
 
 桌面验收使用独立用户数据目录：
 
@@ -68,9 +68,10 @@ npm run test:fixtures
 npm run test:photo-workflow
 node tests/lut-panel-desktop.cjs
 node tests/reference-editor.cjs
+npm run test:magazine-desktop
 ```
 
 `test:fixtures` 从 Lorem Picsum 下载六张公开测试照片，只写到被 Git 忽略的 `tests/fixtures/`。不会读取个人图库。也可自行提供同名测试文件，见脚本中的清单。显影测试需要先准备运行时；`DOSE_REFERENCE_INPUT` 可指定公开测试输入，`DOSE_REFERENCE_EXTENDED=1` 开启重复编辑与关闭保存检查。
 
-0.28.0 本地已通过单张查看／LUT／图库交互、LUT 导出及原生显影的 TIFF 保存／重开测试，并检查 1440×960、980×680 实际截图。此前 DNG 和半幅检查不计作本版重新执行。历史桌面测试仍保留，有些对应旧控件，不是当前 UI 的统一验收入口。
+0.29.0 在源码运行和 Windows 成品包中验证了杂志分页、主图、撤销／重做、单页重排、重启恢复，以及实际 JPEG / PNG 按页导出；检查了 1000 像素宽窗口。发布示例另用六张日本日常照片，在成品包里完成三页导出、LUT 预览和原生显影 TIFF 回传。0.28 的单张查看、图库、重复显影与关闭保存验收记录继续保留；DNG、半幅和所有显卡不计作本次重新验证。
 

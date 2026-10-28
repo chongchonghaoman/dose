@@ -22,7 +22,7 @@ The embedded TeX Gyre Heros faces used for film-edge lettering are under the
 GUST Font License; their notices are included under resources/spectral/licenses in the Windows distribution and in the corresponding source archive.
 This integration is not an endorsement by either upstream author.
 
-The full community editor frontend is also embedded, with the dose Electron transport, launch/return hooks and clearer negative/positive direct-output labels. See vendor/spektralab/README.md. Its reference native host is reused unchanged from v1.3.1-windows.1. Its matching source, dependency sources, original component/data licenses, build records and the recorded license-text provenance limitation are included in upstream-release-source/ inside dose-0.28.0-source.zip. The legacy engine and reference host remain separate source/data distributions. Full native corresponding source is available from the same GitHub Release as the binary; see docs/BUILD.md.
+The full community editor frontend is also embedded, with the dose Electron transport, launch/return hooks and clearer negative/positive direct-output labels. See vendor/spektralab/README.md. Its reference native host is reused unchanged from v1.3.1-windows.1. Its matching source, dependency sources, original component/data licenses, build records and the recorded license-text provenance limitation are included in upstream-release-source/ inside dose-0.29.0-source.zip. The legacy engine and reference host remain separate source/data distributions. Full native corresponding source is available from the same GitHub Release as the binary; see docs/BUILD.md.
 
 ## Runtime libraries
 
@@ -46,4 +46,8 @@ The upstream ShutterClick.wav, ShutterClickRoom.wav and ShutterArrivalRoom.wav a
 ## Test photographs
 
 Development-only fixtures were obtained from Lorem Picsum (https://picsum.photos, image IDs 1018, 1015, 1016, 1039, 1043, 1040). They are not included as demo photos in the application or source archive. Delivered verification screenshots may show these test photos and are evidence of the running UI, not original photographic work by this project. User-imported images remain owned by their respective rights holders.
+
+## Publication photographs
+
+The 0.29 README and promotional screenshots feature Japanese daily-life photographs licensed through Unsplash. Individual photographers, original works and film information are listed in [docs/PHOTO-CREDITS.md](docs/PHOTO-CREDITS.md). These photographs retain their own copyright and Unsplash License; the software GPL does not apply to them. Source photographs are not bundled as application assets.
 

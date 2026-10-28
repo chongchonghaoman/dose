@@ -7,7 +7,7 @@
 
 <h1 align="center">那些日子，慢慢显影。</h1>
 
-<p align="center">把照片排成杂志页，也能调胶片色的 Windows 照片工具。</p>
+<p align="center">选一组照片，排成自己的摄影杂志。Windows · 本地处理 · 开源</p>
 
 <p align="center">
   <a href="https://github.com/chongchonghaoman/dose/releases/latest">下载 Windows 版</a> ·
@@ -16,27 +16,33 @@
   <a href="README.en.md">English</a>
 </p>
 
-![dose 根据照片比例生成的杂志页面](docs/media/hero.png)
+![dose 0.29 实际导出的三页杂志：开篇、主图图组与收尾](docs/media/hero.png)
 
-dose 可以把一组照片自动排成杂志页。横片和竖片保留原比例，开篇、图组和收尾使用不同密度。选一张主图，再换版式，它仍会是这一页的重点。调色也在同一个应用里完成，处理好的照片可以接着放进版面。
+dose 把选片、胶片调色和杂志排版放在同一个工作台上。导入一组照片，按顺序自动排成几页；喜欢的照片可以设为主图。排好后逐页导出，直接分享这一组作品。
+
+上图来自 0.29 的实际导出：六张日本日常照片排成三页，开篇一张，中间四张，最后一张收尾。页面只留下照片和留白。
 
 ## 功能
 
 ### 杂志排版
 
-选好照片，在「一键排版」旁选择「杂志」。dose 会按照片顺序安排开篇、图组和收尾，纸面只保留照片与留白。选中照片点击「设为主图」，这一页会围绕它重新排版。
+选好照片，在「一键排版」旁选择「杂志」。横片与竖片保留各自比例，按照片顺序分成开篇、图组和收尾。翻到不同页面，照片的大小与疏密也跟着变化。
+
+选中照片点击「设为主图」，它会占据这一页的主要位置。重新排版时保留主图，方便围绕同一张照片试几个构图。
 
 再点一次「一键排版」可以换版式；选中某一页的照片，也可以单独重新排这一页。「九页杂志」适合一次整理更多照片，生成的页面会一起放在观片台上，方便比较整组的效果。
 
-点击台面右上角的「导出页面」，可以逐页保存 JPEG 或 PNG，长边可选 2400、3600、4800 像素。照片的调色、位置与旋转会一起保留。
-
 ![dose 的杂志模式：开篇、主图图组与收尾](docs/media/magazine.png)
+
+### 按页保存
+
+点击台面右上角的「导出页面」，每页保存成一张 JPEG 或 PNG，按阅读顺序编号。长边可选 **2400、3600、4800 像素**，带 sRGB 色彩配置。照片的调色、位置与旋转会一起保留，导出的画面就是照片和纸面。
+
+[查看实际导出的主图页](docs/media/magazine-page.jpg) · [0.29 更新记录](CHANGELOG.md)
 
 ### 观片台
 
 照片可以自由摆放，也有网格和胶片袋视图。选中照片按 <kbd>E</kbd> 查看大图，放大检查细节，返回后继续刚才的排版。图库支持文件名搜索，照片多时可以筛选已放置或未放置的部分。
-
-![dose 观片台](docs/media/light-table.png)
 
 ### 胶片风格
 
@@ -59,10 +65,10 @@ Windows 版内置了 SpektraLab 显影工作区。选中照片，点击「胶片
 ## 开始使用
 
 1. 打开 **[Releases → 最新版本](https://github.com/chongchonghaoman/dose/releases/latest)**。
-2. 下载 `dose-0.28.0-Windows-x64.zip`。
+2. 下载 `dose-0.29.0-Windows-x64.zip`。
 3. **完整解压**，双击其中的 `dose.exe`。导入照片后即可使用。
 
-便携版解压即可运行，请保留文件夹中的全部文件。开发者可以下载同一 Release 中的 `dose-0.28.0-source.zip` 获取完整对应源码。
+便携版解压即可运行，请保留文件夹中的全部文件。开发者可以下载同一 Release 中的 `dose-0.29.0-source.zip` 获取完整对应源码。
 
 运行环境为 Windows 10/11 x64；内置显影引擎需要支持 Vulkan 的显卡与驱动。当前版本未签名，Release 提供 SHA-256 校验文件。
 
@@ -100,7 +106,7 @@ npm run test:preferences
 npm run package
 ```
 
-输出在 `build-output/dose-win32-x64/`。完整原生对应源码、依赖来源与重建方法见 [构建说明](docs/BUILD.md)；Release 同时提供 `dose-0.28.0-source.zip`。构建时需另行安装说明中列出的工具链。
+输出在 `build-output/dose-win32-x64/`。完整原生对应源码、依赖来源与重建方法见 [构建说明](docs/BUILD.md)；Release 同时提供 `dose-0.29.0-source.zip`。构建时需另行安装说明中列出的工具链。
 
 ## 来源与许可
 
@@ -113,7 +119,7 @@ npm run package
 | [SpektraLab Windows 社区版](https://github.com/LUOJW5566/SpektraLab) | 内置显影前端与参考原生运行时 | GPL-3.0-or-later，见[来源记录](vendor/spektralab/README.md) |
 | [Pat David / HaldCLUT](https://github.com/NatronGitHub/clut) | 内置的六款胶片风格 LUT | CC BY-SA 4.0，见 [LUT 声明](assets/luts/NOTICE.md) |
 
-dose 由本项目独立维护，集成发行版使用 [GPL-3.0-or-later](LICENSE)。第三方代码、字体、色彩数据和素材保留各自许可，详见 [第三方声明](THIRD_PARTY_NOTICES.md) 与 [HEIC 说明](HEIC-NOTICES.md)。演示截图使用 [Lorem Picsum](https://picsum.photos) 提供的测试照片，摄影版权归原作者。
+dose 由本项目独立维护，集成发行版使用 [GPL-3.0-or-later](LICENSE)。第三方代码、字体、色彩数据和素材保留各自许可，详见 [第三方声明](THIRD_PARTY_NOTICES.md) 与 [HEIC 说明](HEIC-NOTICES.md)。日本日常示例照片来自 Unsplash 的摄影师，作者、作品与许可见 [照片出处](docs/PHOTO-CREDITS.md)。
 
 ## 反馈
 
