@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, '..');
   }
   const paths = await packager({
     dir: root, name: 'dose', platform: 'win32', arch: 'x64',
-    out: path.join(root, 'build-output'), overwrite: true, prune: true,
+    out: process.env.DOSE_PACKAGE_OUT || path.join(root, 'build-output'), overwrite: true, prune: true,
     icon: path.join(root, 'assets/icon.ico'), appVersion: pkg.version, buildVersion: pkg.version,
     extraResource: resources, asar: { unpackDir: 'node_modules/@img' },
     ignore: [/^\/(native|vendor|tests|docs|scripts|licenses|build-output|\.cache|\.sources|\.github|\.git)(?:\/|$)/, /^\/build[^/]*\.(mjs|cjs|ps1)$/, /^\/package-lock\.json$/],

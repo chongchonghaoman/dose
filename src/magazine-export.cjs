@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const sharp = require('sharp');
+const {sourceRect}=require('./crop-geometry.js');
 
 const LONG_EDGES = new Set([2400, 3600, 4800]);
 
@@ -59,9 +60,10 @@ async function writeMagazineExport({ state, parent, format = 'jpeg', longEdge = 
         if (!item || !Array.isArray(page.itemIds) || !page.itemIds.includes(item.id)) continue;
         const photo = findPhoto(state.photos, item.photoId);
         if (!photo) throw new Error(`missing photo ${item.photoId}`);
-        const sourceHeight = item.width * (Number(photo.height) / Number(photo.width));
+        const cropped=page.kind==='diptych'&&item.crop&&Number.isFinite(item.height);
+        const sourceHeight = cropped?item.height:item.width * (Number(photo.height) / Number(photo.width));
         if (!Number.isFinite(sourceHeight) || sourceHeight <= 0) throw new RangeError(`invalid dimensions for photo ${item.photoId}`);
-        const requestedPixels = Math.min(6000, Math.max(1, Math.ceil(Math.max(item.width * scale, sourceHeight * scale))));
+        const requestedPixels = Math.min(6000, Math.max(1, Math.ceil(cropped?Math.max(item.width/photo.width,sourceHeight/photo.height)*Math.max(photo.width,photo.height)*scale*(item.crop.zoom||1):Math.max(item.width * scale, sourceHeight * scale))));
         const source = await resolveImage(photo, requestedPixels);
         if (!(typeof source === 'string' || Buffer.isBuffer(source) || source instanceof Uint8Array)) throw new TypeError(`resolveImage returned invalid image for ${item.photoId}`);
         const iw = Math.max(1, Math.round(num(item.width, 'item.width') * scale));
@@ -70,7 +72,13 @@ async function writeMagazineExport({ state, parent, format = 'jpeg', longEdge = 
         if(iw*ih>64000000||Math.max(iw,ih)>16000)throw Error('照片超出了可导出的页面范围，请缩小照片或增大纸面。');
         // Separate pipelines guarantee rotation follows resizing. An edited
         // source can include native film edges and have a different aspect.
-        const resized=await sharp(source).resize({width:iw,height:ih,fit:'inside'}).toColourspace('srgb').png().toBuffer();
+        let pipeline=sharp(source);
+        if(cropped){
+          const metadata=await pipeline.metadata(),rect=sourceRect(metadata.width,metadata.height,iw,ih,item.crop);
+          const cropWidth=Math.max(1,Math.min(metadata.width,Math.round(rect.width))),cropHeight=Math.max(1,Math.min(metadata.height,Math.round(rect.height)));
+          pipeline=pipeline.extract({left:Math.min(metadata.width-cropWidth,Math.max(0,Math.round(rect.x))),top:Math.min(metadata.height-cropHeight,Math.max(0,Math.round(rect.y))),width:cropWidth,height:cropHeight});
+        }
+        const resized=await pipeline.resize({width:iw,height:ih,fit:cropped?'fill':'inside'}).toColourspace('srgb').png().toBuffer();
         const rendered=angle%360?await sharp(resized).rotate(angle,{background:{r:0,g:0,b:0,alpha:0}}).png().toBuffer():resized;
         const meta = await sharp(rendered).metadata();
         let left = Math.round((num(item.x, 'item.x') - page.x) * scale - (meta.width || iw) / 2);
@@ -88,7 +96,7 @@ async function writeMagazineExport({ state, parent, format = 'jpeg', longEdge = 
       const ext = outputFormat === 'png' ? 'png' : 'jpg';
       const name = `${String(pi + 1).padStart(2, '0')}.${ext}`;
       const out = path.join(temp, name);
-      let image = sharp({ create: { width, height, channels: 3, background: { r: 232, g: 230, b: 227 } } }).composite(layers).withMetadata({ icc: 'srgb' });
+      let image = sharp({ create: { width, height, channels: 3, background: page.kind==='diptych'?'#ffffff':{ r: 232, g: 230, b: 227 } } }).composite(layers).withMetadata({ icc: 'srgb' });
       image = outputFormat === 'png' ? image.png() : image.jpeg({ quality: 95, chromaSubsampling: '4:4:4' });
       await image.toFile(out);
       files.push(out);

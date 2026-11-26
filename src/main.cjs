@@ -14,6 +14,7 @@ const {hasLegacyAutoFit,backupLegacyAutoFit}=require('./auto-fit-migration.cjs')
 const {writeGridExport}=require('./grid-export.cjs');
 const {writeMagazineExport}=require('./magazine-export.cjs');
 const {photoAvailability}=require('./photo-availability.cjs');
+const {createPhotoMetadata}=require('./photo-metadata.cjs');
 const {createReferenceEditor}=require('./reference-editor.cjs');
 const {createUiPreferences}=require('./ui-preferences.cjs');
 let imageInput, spectralInput;
@@ -115,6 +116,7 @@ app.whenReady().then(async () => {
   cacheDir = path.join(app.getPath('userData'), 'previews');
   const heicInput=createHeicCache(path.join(app.getPath('userData'),'heic-cache'),renderFilm),dngInput=createDngCache(path.join(app.getPath('userData'),'dng-cache'),renderFilm);
   imageInput=async file=>dngInput(await heicInput(file));
+  const photoMetadata=createPhotoMetadata({resolvePhoto:id=>allowed.get(id),sharp,imageInput:async file=>imageInput(file)});
   // HEIC's existing decoder is an explicit SDR fallback. DNG and other native
   // supported sources go straight to the host, never through the thumbnail PNG.
   spectralInput=heicInput;
@@ -158,6 +160,7 @@ app.whenReady().then(async () => {
     const known=requested.filter(id=>allowed.has(id)),result=await photoAvailability(known.map(id=>allowed.get(id)));
     return {available:result.available,unavailable:[...result.unavailable,...requested.filter(id=>!allowed.has(id))]};
   });
+  ipcMain.handle('photos:metadata',async(event,ids)=>{if(event.sender!==win?.webContents)throw Error('Unknown window');return photoMetadata(ids);});
   ipcMain.handle('grid:choose-output',async()=>{
     if(exporting)throw Error('请等待当前导出完成。');
     const result=await dialog.showOpenDialog(win,{title:'选择九宫格导出位置',properties:['openDirectory','createDirectory']});

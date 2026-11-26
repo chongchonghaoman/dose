@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('lighttable', {
   exportMagazine: options => ipcRenderer.invoke('magazine:export',options),
   onMagazineProgress: fn => {const listener=(_,progress)=>fn(progress);ipcRenderer.on('magazine:progress',listener);return()=>ipcRenderer.removeListener('magazine:progress',listener);},
   photoAvailability: ids => ipcRenderer.invoke('photos:availability',ids),
+  photoMetadata: ids => ipcRenderer.invoke('photos:metadata',ids),
   chooseGridOutput: () => ipcRenderer.invoke('grid:choose-output'),
   exportGrid: request => ipcRenderer.invoke('grid:write',request),
   openExportFolder: () => ipcRenderer.invoke('photos:open-export'),
