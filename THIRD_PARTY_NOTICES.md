@@ -8,9 +8,18 @@ Reference commit: 1a998cfce9096ac7b42e26aba67c922885fd43e2.
 
 Original MIT copyright and permission notice is preserved in licenses/LightTable-MIT.txt and in the native runtime. The dose brand replaces the original icon. This is an independent photo-workflow project, not an official upstream release. The integrated dose distribution is GPL-3.0-or-later; see LICENSE. The GitHub fork preserves LightTable ancestry; its historical macOS tree is not part of the dose Windows runtime.
 
+## SpektraFilm spectral GPU kernel (`spektrafilm-rs`)
+
+The primary spectral film simulation kernel in `native/spectral/spektralab-host.exe` (`spektrafilm-dose-host`) is powered by:
+
+- **Rust/GPU port**: https://github.com/turbasvin/spektrafilm-rs (v0.1.2, commit `9dd59b0380194b93686aaa230a8bb9680aa270a4`), GPL-3.0. Source vendored under `vendor/spektrafilm-rs` with license text in `vendor/spektrafilm-rs/LICENSE` and `native/spectral/licenses/SPEKTRAFILM_RS_LICENSE.txt`.
+- **Reference spectral physics & material data**: https://github.com/andreavolpato/spektrafilm (v0.3.4, commit `3bb2c2d2801ff68b92019cf1dbcbb133d60832bc`), GPL-3.0; film and print spectral material profiles, LUTs, and filter curves under CC BY-SA 4.0 (`native/spectral/licenses/SPEKTRAFILM_LICENSE.txt`).
+
+Local host integration (`vendor/spektrafilm-rs/crates/spektrafilm-dose-host`) adapts the `spektrafilm-rs` `wgpu`/Vulkan GPU pipeline to the `dose` IPC protocol, ProPhoto RGB linear working transfer, ROMM RGB / sRGB output color management, Layer 2 grade, and RAW/raster decoding.
+
 ## SpektraLab native Windows engine
 
-https://github.com/JamesQiu2005/SpektraLab at 99c2d5c9883be485085895157279cc7c4eaa8db6. GPL-3.0-or-later. The legacy native host, resources, licenses and material-data attribution are in resources/spectral in the Windows distribution (native/spectral after runtime preparation in a development checkout). The source archive includes the modified engine under SpektraLab-port, LibRaw and Vulkan-Headers dependency sources, and build instructions. These compiled runtime directories are intentionally not tracked in Git.
+https://github.com/JamesQiu2005/SpektraLab at 99c2d5c9883be485085895157279cc7c4eaa8db6. GPL-3.0-or-later. Originally used as the native host in `native/spectral`, now retained for protocol lineage and upstream reference alongside `native/reference`. The source archive includes historical references under `SpektraLab-port`, LibRaw and Vulkan-Headers dependency sources, and build instructions. These compiled runtime directories are intentionally not tracked in Git.
 
 ## Community Windows implementation
 

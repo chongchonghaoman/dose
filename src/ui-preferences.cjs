@@ -3,7 +3,7 @@ const path = require('node:path');
 
 const DEFAULTS = Object.freeze({ favoriteLuts: [], librarySort: 'added' });
 const MAX_FAVORITES = 5000;
-const HASH = /^[a-f0-9]{64}$/i;
+const HASH = /^(?:[a-f0-9]{64}|spectral:[a-z0-9_-]+)$/i;
 
 function clean(input) {
   const value = input && typeof input === 'object' ? input : {};

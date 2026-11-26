@@ -28,10 +28,11 @@ export class LutBrowser {
     for(const lut of rows.slice(this.page*this.pageSize,(this.page+1)*this.pageSize)){
       const card=document.createElement('div');card.className='lut-card';card.dataset.lut=lut.hash;
       const button=document.createElement('button');button.className='lut-apply';button.title=lut.name;button.setAttribute('aria-label',lut.name);
-      const active=adjustments.engine!=='spectral'&&(adjustments.lut?adjustments.lutId:'')===lut.hash;button.setAttribute('aria-pressed',String(active));
+      const currentHash=adjustments.engine==='spectral'?(adjustments.spectralPreset?'spectral:'+adjustments.spectralFilm:''):(adjustments.lut?adjustments.lutId:'');
+      const active=currentHash===lut.hash;button.setAttribute('aria-pressed',String(active));
       const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';
-      const a=globalThis.LightTableFilm.withLut(adjustments,lut.hash);
-      img.src='photo://'+photo.id+'/image?size=320&edit='+encodeURIComponent(JSON.stringify(a))+'&lutHash='+lut.hash;
+      const a=globalThis.LightTableFilm.withLut(adjustments,lut.hash,library);
+      img.src='photo://'+photo.id+'/image?size=320&edit='+encodeURIComponent(JSON.stringify(a))+'&lutHash='+encodeURIComponent(lut.hash);
       img.onerror=()=>{card.classList.add('unavailable');button.disabled=true;label.textContent=lut.name+' · 预览不可用';};
       const label=document.createElement('span');label.textContent=lut.name;button.append(img,label);
       button.onclick=()=>{this.onChoose(lut.hash);this.close();};card.append(button);

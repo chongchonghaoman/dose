@@ -41,14 +41,15 @@ function productDelta(a,width,height,size=2560,film={},paper={}){
     digital_intermediate:false,digital_intermediate_blue_compensation:false,
     // The base engine table has no silver-paper row. The original app sends
     // Multigrade filter 2 explicitly; without it the print is too contrasty.
-    ...(film.monochrome&&paper.monochrome?{c_filter_neutral:0,m_filter_neutral:0,y_filter_neutral:68}:{}),
+    ...(film.monochrome&&paper.monochrome?{c_filter_neutral:0,m_filter_neutral:0,y_filter_neutral:68}:{c_filter_neutral:null,m_filter_neutral:null,y_filter_neutral:null}),
     output_color_space:'ProPhoto RGB',output_cctf_encoding:true};
 }
 function layer2Grade(a){return {temperature:a.temperature/100,contrast:a.contrast/100,
   saturation:a.saturation/100,highlights:a.spectralIntent==='natural'?0:a.highlights/100,shadows:a.spectralIntent==='natural'?0:a.shadows/100,
   auto_fit_active:a.autoFitMode==='natural'&&a.autoFitVersion===2,auto_fit_ev:a.autoFitVersion===2&&Number.isFinite(a.autoFitEV)?Math.min(.75,Math.max(0,a.autoFitEV)):0,auto_fit_saturation:1};}
 class SpectralHost {
-  constructor(opts={}){this.home=opts.home||homeDir();this.child=null;this.buf=Buffer.alloc(0);this.next=1;this.pending=new Map();this.sessions=new Map();this.stderr='';this.temp=null;}
+  constructor(opts={}){this.home=opts.home||homeDir();this.child=null;this.buf=Buffer.alloc(0);this.next=1;this.pending=new Map();this.sessions=new Map();this.keyLocks=new Map();this.stderr='';this.temp=null;}
+  _serialized(key,fn){const prev=this.keyLocks.get(key)||Promise.resolve();const next=prev.catch(()=>{}).then(fn);this.keyLocks.set(key,next);next.finally(()=>{if(this.keyLocks.get(key)===next)this.keyLocks.delete(key);});return next;}
   start(){
     if(this.child)return;
     const exe=path.join(this.home,'spektralab-host.exe');
@@ -85,23 +86,27 @@ class SpectralHost {
   async status(){const {result}=await this.request('hello');if(!result.backend?.available)throw Error(result.backend?.error||'显卡 Vulkan 光谱引擎不可用');return {available:true,backend:result.backend,...this.catalog()};}
   async renderManaged(input,a,size=1600){
     if(a.spectralVersion!==2)return this.render(input,a,size);
-    const entry=await this.productSession(input,a,size);
-    const out=await this.request('render',{session:entry.session,tier:'live',reprint:true,format:'png16',grade:layer2Grade(a)});
-    const {width,height}=out.result.image;
-    if(out.payload.length<33||out.payload.toString('ascii',1,4)!=='PNG'||out.payload[24]!==16)throw Error('光谱预览编码无效');
-    // Do not run a second gamut/lightness transform or an 8-bit Sharp resize.
-    // A tagged 16-bit working image reaches the browser's colour manager.
-    return {width,height,encoding:'png',colorSpace:'ProPhoto RGB',bits:16,data:new Uint8Array(out.payload),timings:out.result.timings_ms};
+    return this._serialized(input,async()=>{
+      const entry=await this.productSession(input,a,size);
+      const out=await this.request('render',{session:entry.session,tier:'live',reprint:true,format:'png16',grade:layer2Grade(a)});
+      const {width,height}=out.result.image;
+      if(out.payload.length<33||out.payload.toString('ascii',1,4)!=='PNG'||out.payload[24]!==16)throw Error('光谱预览编码无效');
+      // Do not run a second gamut/lightness transform or an 8-bit Sharp resize.
+      // A tagged 16-bit working image reaches the browser's colour manager.
+      return {width,height,encoding:'png',colorSpace:'ProPhoto RGB',bits:16,data:new Uint8Array(out.payload),timings:out.result.timings_ms};
+    });
   }
   async render(input,a,size){
     if(a.spectralVersion===2){
-      const entry=await this.productSession(input,a,size);
-      const out=await this.request('render',{session:entry.session,tier:'live',reprint:true,format:'rgba8',display:'srgb',grade:layer2Grade(a)});
-      let {width,height}=out.result.image;
-      if(out.payload.length!==width*height*4)throw Error('光谱图像尺寸不匹配');
-      let data=out.payload;
-      if(Math.max(width,height)>size){const resized=await sharp(data,{raw:{width,height,channels:4}}).resize(size,size,{fit:'inside'}).raw().toBuffer({resolveWithObject:true});data=resized.data;width=resized.info.width;height=resized.info.height;}
-      return {width,height,data:new Uint8Array(data),timings:out.result.timings_ms};
+      return this._serialized(input,async()=>{
+        const entry=await this.productSession(input,a,size);
+        const out=await this.request('render',{session:entry.session,tier:'live',reprint:true,format:'rgba8',display:'srgb',grade:layer2Grade(a)});
+        let {width,height}=out.result.image;
+        if(out.payload.length!==width*height*4)throw Error('光谱图像尺寸不匹配');
+        let data=out.payload;
+        if(Math.max(width,height)>size){const resized=await sharp(data,{raw:{width,height,channels:4}}).resize(size,size,{fit:'inside'}).raw().toBuffer({resolveWithObject:true});data=resized.data;width=resized.info.width;height=resized.info.height;}
+        return {width,height,data:new Uint8Array(data),timings:out.result.timings_ms};
+      });
     }
     const catalog=this.catalog();if(!catalog.films.some(x=>x.id===a.spectralFilm)||!catalog.papers.some(x=>x.id===a.spectralPaper))throw Error('胶片或相纸配置不存在');
     const stat=await fs.promises.stat(input),key=crypto.createHash('sha256').update(`${input}:${stat.mtimeMs}:${stat.size}:${size}`).digest('hex');
@@ -162,11 +167,13 @@ class SpectralHost {
   }
   async exportImage(input,a,output,format='jpeg',size=6000,quality=96){
     if(a.spectralVersion!==2)throw Error('高精度导出需要新版光谱配方');
-    const entry=await this.productSession(input,a,2560);
-    try{return (await this.request('export_image',{session:entry.session,path:output,
-      format:format==='tiff'?'tiff16':format,color_space:format==='tiff'?'prophoto':'srgb',
-      long_edge:size,quality,grade:layer2Grade(a),overwrite:false})).result;}
-    finally{await this.request('close',{session:entry.session});for(const [key,value] of this.sessions)if(value===entry)this.sessions.delete(key);}
+    return this._serialized(input,async()=>{
+      const entry=await this.productSession(input,a,2560);
+      try{return (await this.request('export_image',{session:entry.session,path:output,
+        format:format==='tiff'?'tiff16':format,color_space:format==='tiff'?'prophoto':'srgb',
+        long_edge:size,quality,grade:layer2Grade(a),overwrite:false})).result;}
+      finally{await this.request('close',{session:entry.session});for(const [key,value] of this.sessions)if(value===entry)this.sessions.delete(key);}
+    });
   }
   async dispose(){if(this.child){try{await this.request('shutdown');}catch{}this.child?.kill();this.child=null;}if(this.temp)await fs.promises.rm(this.temp,{recursive:true,force:true});}
 }

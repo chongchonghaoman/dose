@@ -1,0 +1,23 @@
+[package]
+name = "spektrafilm-dose-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "spektralab-host"
+path = "src/main.rs"
+
+[dependencies]
+spektrafilm-core.workspace = true
+spektrafilm-gpu.workspace = true
+spektrafilm-math.workspace = true
+spektrafilm-model.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+rayon.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+image.workspace = true
+rawler = "0.7"

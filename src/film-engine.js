@@ -1,6 +1,6 @@
 // Independent .cube reader and image controls. No proprietary LUT is bundled.
 const autoFitMath = typeof module === 'object' && module.exports ? require('./auto-fit.js') : globalThis.DoseAutoFit;
-const DEFAULTS = Object.freeze({ engine: 'lut', spectralFilm: 'kodak_portra_400', spectralPaper: 'kodak_portra_endura', filmFormat: 35, printExposure: 0, spectralEdge:false, spectralDate:false, spectralDateText:'', spectralMask:false, spectralMaskHighlights:0, spectralMaskShadows:0, lut: false, lutId: '', strength: 100, exposure: 0, highlights: 0, shadows: 0, contrast: 0, temperature: 0, saturation: 0, grain: 0, halation: 0, bloom: 0, autoFitMode:'off',autoFitVersion:2,autoFitEV:0,autoFitSaturation:1,autoFitKey:'' });
+const DEFAULTS = Object.freeze({ engine: 'lut', spectralFilm: 'kodak_portra_400', spectralPaper: 'kodak_portra_endura', filmFormat: 35, printExposure: 0, spectralPreset:false, spectralEdge:false, spectralDate:false, spectralDateText:'', spectralMask:false, spectralMaskHighlights:0, spectralMaskShadows:0, lut: false, lutId: '', strength: 100, exposure: 0, highlights: 0, shadows: 0, contrast: 0, temperature: 0, saturation: 0, grain: 0, halation: 0, bloom: 0, autoFitMode:'off',autoFitVersion:2,autoFitEV:0,autoFitSaturation:1,autoFitKey:'' });
 // Version is explicit: unversioned saved spectral recipes retain v0.9 behavior.
 const SPECTRAL_DEFAULTS = Object.freeze({ ...DEFAULTS, engine:'spectral', spectralVersion:2, metering:'balanced', spectralPaper:'kodak_supra_endura', grain:50, halation:25, bloom:10/3 });
 function spectralDefaults() { return { ...SPECTRAL_DEFAULTS }; }
@@ -8,9 +8,18 @@ function spectralDefaults() { return { ...SPECTRAL_DEFAULTS }; }
 // Natural is an explicit, versioned recipe choice, never an upgrade migration.
 const NATURAL_SPECTRAL_DEFAULTS = Object.freeze({ ...SPECTRAL_DEFAULTS, spectralIntent:'natural', metering:'manual', grain:12, halation:5, bloom:0 });
 function naturalDefaults() { return { ...NATURAL_SPECTRAL_DEFAULTS }; }
-function withLut(adjustments,id){
+function withLut(adjustments,id,catalog){
+  if(typeof id==='string'&&id.startsWith('spectral:')){
+    const filmId=id.slice('spectral:'.length);
+    const same=adjustments?.engine==='spectral'&&adjustments?.spectralPreset===true;
+    const base=same?adjustments:DEFAULTS;
+    const match=Array.isArray(catalog)?catalog.find(item=>item?.id===filmId||item?.hash===id):null;
+    const targetPrint=match?.targetPrint||match?.spectral?.targetPrint||(match?.monochrome&&match?.type!=='positive'?'kodak_2302':null);
+    const fallbackPaper=base.spectralPaper==='kodak_2302'&&!match?.monochrome?DEFAULTS.spectralPaper:(base.spectralPaper||DEFAULTS.spectralPaper);
+    return {...DEFAULTS,...base,engine:'spectral',spectralVersion:2,spectralIntent:'natural',spectralPreset:true,spectralFilm:filmId,spectralPaper:targetPrint||fallbackPaper,metering:'manual',lut:false,lutId:'',autoFitMode:'off',autoFitVersion:2,autoFitEV:0,autoFitSaturation:1,autoFitKey:''};
+  }
   const base=adjustments?.engine==='spectral'?DEFAULTS:adjustments;
-  return {...DEFAULTS,...base,engine:'lut',lut:!!id,lutId:id||'',autoFitMode:'off',autoFitVersion:2,autoFitEV:0,autoFitSaturation:1,autoFitKey:''};
+  return {...DEFAULTS,...base,engine:'lut',spectralPreset:false,lut:!!id,lutId:id||'',autoFitMode:'off',autoFitVersion:2,autoFitEV:0,autoFitSaturation:1,autoFitKey:''};
 }
 function withSpectralIntent(a,intent) {
   const natural=intent==='natural',old=a.spectralIntent==='natural'?NATURAL_SPECTRAL_DEFAULTS:SPECTRAL_DEFAULTS;
@@ -30,6 +39,7 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 function cleanAdjustments(input = {}) {
   const result = { ...DEFAULTS, lut: input?.lut === true, lutId: typeof input?.lutId === 'string' && /^[a-f0-9]{64}$/.test(input.lutId) ? input.lutId : '' };
   result.engine = input?.engine === 'spectral' ? 'spectral' : 'lut';
+  result.spectralPreset = result.engine === 'spectral' && input?.spectralPreset === true;
   result.spectralVersion = input?.spectralVersion === 2 ? 2 : 1;
   result.spectralIntent = result.spectralVersion===2&&input?.spectralIntent==='natural'?'natural':'original';
   result.metering = ['balanced','center','protect_highlights','protect_shadows','manual'].includes(input?.metering) ? input.metering : 'balanced';

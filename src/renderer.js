@@ -21,7 +21,8 @@ const DEFAULT_ADJUSTMENTS=globalThis.LightTableFilm.DEFAULTS;
 // Legacy spectral recipes remain readable; new adjustments use the LUT path.
 const adjustmentOf=id=>({...DEFAULT_ADJUSTMENTS,...(photoMap.get(id)?.adjustments||{})});
 const photoURL = (id,size='preview',original=false) => { const a=adjustmentOf(id); const edit=original?'':`&edit=${encodeURIComponent(JSON.stringify(a))}`; const lutId=original?'':(a.lutId||filmStatus?.hash||''); const hash=lutId?`&lutHash=${encodeURIComponent(lutId)}`:''; return `photo://${id}/image?size=${size}${edit}${hash}`; };
-let filmStatus={available:false,name:'本地胶片库未安装',hash:'',library:[]}, filmOriginal=false, filmDebounce, filmGesture=null;
+let filmStatus={available:false,name:'本地胶片库未安装',hash:'',library:[]}, spectralStatus={available:false,films:[],papers:[]}, filmOriginal=false, filmDebounce, filmGesture=null;
+const spectralEntries=()=>{if(!spectralStatus?.available||!Array.isArray(spectralStatus.films))return [];const monoPaper=spectralStatus.papers?.find?.(p=>p.monochrome)?.id||'kodak_2302';return spectralStatus.films.map(f=>({hash:'spectral:'+f.id,id:f.id,name:f.name+' · 光谱',source:'SpektraFilm 0.3.4 · GPU 光谱',available:true,type:f.type,monochrome:f.monochrome,targetPrint:f.targetPrint||(f.monochrome&&f.type!=='positive'?monoPaper:null)}));};
 
 const liveFrames=new Map(),spectralFrames=new Map(),spectralSeq=new Map(),spectralPending=new Map(),spectralRunning=new Set();let liveRaf=0,liveIds=[],liveErrorShown=false;
 const autoFitPending=new Map(),autoFitRunning=new Map(),autoFitFailed=new Map();let autoFitTimer;
@@ -29,7 +30,7 @@ const shareComposer=new ShareComposer({api,getScene:()=>structuredClone({photos:
 const photoView=new PhotoView({canvas,redraw:requestDraw,onZoom:updateControls,onClose:()=>setPhotoView(false),onNavigate:navigatePhoto});
 const diptychComposer=new DiptychComposer({api,getSource:p=>photoURL(p.id,'thumb'),onApply:applyDiptych,notify:message=>toast(message)});
 const swapDiptych=document.createElement('button');swapDiptych.id='swap-diptych';swapDiptych.className='text-btn';swapDiptych.textContent='上下交换';swapDiptych.hidden=true;$('#reflow-page').before(swapDiptych);swapDiptych.onclick=swapDiptychPage;
-const lutBrowser=new LutBrowser({getContext:()=>{const id=photoView.id||filmTargets()[0];return {photo:photoMap.get(id),adjustments:adjustmentOf(id),library:filmStatus.library||[],favorites:uiPreferences.favoriteLuts};},onChoose:chooseLut,onFavorite:async hash=>{const list=uiPreferences.favoriteLuts;await savePreferences({favoriteLuts:list.includes(hash)?list.filter(id=>id!==hash):[...list,hash]});}});
+const lutBrowser=new LutBrowser({getContext:()=>{const id=photoView.id||filmTargets()[0];return {photo:photoMap.get(id),adjustments:adjustmentOf(id),library:[...(filmStatus.library||[]),...spectralEntries()],favorites:uiPreferences.favoriteLuts};},onChoose:chooseLut,onFavorite:async hash=>{const list=uiPreferences.favoriteLuts;await savePreferences({favoriteLuts:list.includes(hash)?list.filter(id=>id!==hash):[...list,hash]});}});
 async function savePreferences(patch){const previous=uiPreferences;uiPreferences={...uiPreferences,...patch};try{uiPreferences=await api.savePreferences(patch);}catch{uiPreferences=previous;$('#library-sort').value=previous.librarySort;renderLibrary();toast('偏好保存失败，请检查磁盘空间。');}}
 function visibleLibraryPhotos(){
   if(!state)return [];const q=$('#library-search').value.trim().normalize('NFKC').toLocaleLowerCase(),filter=$('#library-filter').value,sort=$('#library-sort').value,placed=new Set(state.items.map(i=>i.photoId));
@@ -294,15 +295,15 @@ function tiffCapable(id){const a=adjustmentOf(id);return a.engine==='spectral'&&
 let lutOptionsKey='';
 function updateFilmPanel(){
   if(!state)return;
-  const ids=filmTargets(),first=adjustmentOf(ids[0]),values=ids.map(adjustmentOf),legacy=values.some(a=>a.engine==='spectral');
+  const ids=filmTargets(),first=adjustmentOf(ids[0]),values=ids.map(adjustmentOf),legacy=values.some(a=>a.engine==='spectral'&&!a.spectralPreset);
   $('#reference-editor').disabled=!ids.length;
   $('#browse-luts').disabled=!ids.length;
   $('#reference-editor').title=ids.length?'在显影室中处理原片':'选择照片';
   $('#film-scope').textContent=ids.length===1?photoMap.get(ids[0])?.name:ids.length?ids.length+' 张照片':'选择照片';
   $('#film-scope').title=$('#film-scope').textContent;
   $('#film-scope').hidden=photoView.open&&ids.length===1;
-  const library=Array.isArray(filmStatus.library)?filmStatus.library:[];
-  const valueFor=a=>a.engine==='spectral'?'__legacy':a.lut?(a.lutId||filmStatus.hash||''):'';
+  const library=[...(Array.isArray(filmStatus.library)?filmStatus.library:[]),...spectralEntries()];
+  const valueFor=a=>a.engine==='spectral'?(a.spectralPreset?'spectral:'+a.spectralFilm:'__legacy'):a.lut?(a.lutId||filmStatus.hash||''):'';
   const chosen=ids.length?valueFor(first):'',mixed=values.some(a=>valueFor(a)!==chosen),missing=!!chosen&&!chosen.startsWith('__')&&!library.some(l=>l.hash===chosen);
   const select=$('#lut-library'),optionsKey=JSON.stringify([library.map(l=>[l.hash,l.name,l.source,l.available]),mixed,legacy,missing?chosen:'']);
   if(optionsKey!==lutOptionsKey){
@@ -311,12 +312,12 @@ function updateFilmPanel(){
     select.append(option('','无风格'));
     if(mixed)select.append(option('__mixed','多种风格',true));
     if(legacy)select.append(option('__legacy','旧版显影',true));
-    if(missing)select.append(option(chosen,'缺失的 LUT',true));
+    if(missing)select.append(option(chosen,chosen.startsWith('spectral:')?'光谱预设不可用':'缺失的 LUT',true));
     const groups=new Map();for(const lut of library){let group=groups.get(lut.source);if(!group){group=document.createElement('optgroup');group.label=lut.source;groups.set(lut.source,group);select.append(group);}group.append(option(lut.hash,lut.name,lut.available===false));}
   }
   select.value=mixed?'__mixed':chosen;select.disabled=!ids.length;
   select.title=legacy?'选择 LUT 将替换旧版显影，可撤销':'胶片风格';
-  const error=$('#lut-error');error.hidden=!missing;error.textContent=missing?'LUT 不在本机，请重新导入。':'';
+  const error=$('#lut-error');error.hidden=!missing;error.textContent=missing?(chosen.startsWith('spectral:')?'GPU 光谱胶片引擎不可用，请检查显卡驱动或使用 LUT。':'LUT 不在本机，请重新导入。'):'';
   const strength=$('#lut-strength'),strengthMixed=values.some(a=>a.strength!==first.strength);
   strength.value=first.strength;strength.disabled=!ids.length||legacy||!values.every(a=>a.lut)||missing;
   $('#lut-strength-value').textContent=strengthMixed?'—':first.strength+'%';
@@ -578,7 +579,8 @@ $('#library-reset').onclick=()=>{$('#library-search').value='';$('#library-filte
 function chooseLut(value){
   const ids=filmTargets();if(!ids.length||value.startsWith('__'))return;
   finishFilmGesture();checkpoint();
-  for(const id of ids){const p=photoMap.get(id);if(p)p.adjustments=globalThis.LightTableFilm.withLut(adjustmentOf(id),value);}
+  const catalog=[...(filmStatus.library||[]),...spectralEntries()];
+  for(const id of ids){const p=photoMap.get(id);if(p)p.adjustments=globalThis.LightTableFilm.withLut(adjustmentOf(id),value,catalog);}
   queueLive(ids);changed(true);
 }
 $('#lut-library').onchange=e=>chooseLut(e.target.value);
@@ -659,6 +661,7 @@ for(const [field] of filmFields){const input=$(`#film-${field}`);input.title='�
 try {
   const loaded=await api.load();state=normalize(loaded.state);$('.help-note strong').textContent='dose for Windows · '+loaded.version;rebuild();
   if(api.filmStatus)filmStatus=await api.filmStatus()||filmStatus;
+  if(api.spectralStatus)try{spectralStatus=await api.spectralStatus()||spectralStatus;}catch{}
   try{uiPreferences=await api.preferences();$('#library-sort').value=uiPreferences.librarySort;}catch{toast('本机偏好暂时无法读取。');}
   for(const p of state.photos)if(p.adjustments?.lut&&!p.adjustments.lutId)p.adjustments.lutId=filmStatus.hash||'';
   await warmPhotos(state.photos);ready=true;document.body.dataset.ready='true';resize();renderLibrary();updateControls();requestDraw();

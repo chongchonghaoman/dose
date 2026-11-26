@@ -123,7 +123,9 @@ npm run package
 | 项目 | 在 dose 中的作用 | 许可／来源 |
 | --- | --- | --- |
 | [LightTable](https://github.com/fuyuan9972-svg/LightTable) | 观片台的上游项目；本仓库以 fork 保留历史 | MIT，保留[原始声明](licenses/LightTable-MIT.txt) |
-| [SpektraLab](https://github.com/JamesQiu2005/SpektraLab) | 胶片、相纸与显影引擎 | GPL-3.0-or-later，原始许可随包提供 |
+| [spektrafilm](https://github.com/andreavolpato/spektrafilm) | 光谱胶片物理模型与 0.3.4 胶片/相纸配置数据 | GPL-3.0 & CC BY-SA 4.0，见[许可](native/spectral/licenses/SPEKTRAFILM_LICENSE.txt) |
+| [spektrafilm-rs](https://github.com/turbasvin/spektrafilm-rs) | GPU（wgpu/Vulkan）高精度实时光谱胶片渲染内核 | GPL-3.0，源码见 `vendor/spektrafilm-rs` |
+| [SpektraLab](https://github.com/JamesQiu2005/SpektraLab) | 原生协议原型与胶片/相纸显影参考 | GPL-3.0-or-later，原始许可随包提供 |
 | [SpektraLab Windows 社区版](https://github.com/LUOJW5566/SpektraLab) | 内置显影前端与参考原生运行时 | GPL-3.0-or-later，见[来源记录](vendor/spektralab/README.md) |
 | [Pat David / HaldCLUT](https://github.com/NatronGitHub/clut) | 内置的六款胶片风格 LUT | CC BY-SA 4.0，见 [LUT 声明](assets/luts/NOTICE.md) |
 
