@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/chongchonghaoman/dose/releases/latest">下载 Windows 版</a> ·
+  <a href="https://metrolabs.mobi/#/project/dose">作品集案例</a> ·
   <a href="#功能">功能</a> ·
   <a href="docs/BUILD.md">本地开发</a> ·
   <a href="README.en.md">English</a>
